@@ -283,6 +283,9 @@ func ValidateUkey(c fiber.Ctx) error {
 		user, err = service.Auth.ValidateUkey(apiKey, legacyUnikey(c))
 	}
 	if err != nil {
+		if err == service.ErrInvalidToken {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid or expired client access token"})
+		}
 		if err.Error() == "unauthorized" {
 			log.Printf("GAMESERVER_AUTH: Key mismatch. Unauthorized request.")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
