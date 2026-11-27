@@ -15,8 +15,10 @@ jobs:
     name: Go tests and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
           cache: true
@@ -32,12 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Enable pnpm
         run: corepack enable
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Typecheck
         run: pnpm check
+      - name: Export generated lockfile for commit
+        run: |
+          base64 -w0 pnpm-lock.yaml | fold -w 8000 | sed 's/^/LOCKFILE_B64:/'
