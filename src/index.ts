@@ -115,6 +115,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           DB_USER: this.env.DB_USER!,
           DB_PASS: this.env.DB_PASS!,
           DB_NAME: this.env.DB_NAME!,
+          DB_TLS: "true",
           DB_MAX_OPEN_CONNS: "20",
           DB_MAX_IDLE_CONNS: "5",
           DB_CONN_MAX_LIFETIME: "5m",
