@@ -133,6 +133,9 @@ func initGSMService() *gsm.Manager {
 		launcher, err = gsm.NewHTTPLauncher(cfg.GSMAgentURL, cfg.GSMAgentToken)
 		if err != nil {
 			_ = store.Close()
+			if cfg.IsProduction() {
+				log.Fatalf("GSM remote agent configuration is invalid: %v", err)
+			}
 			log.Printf("GSM disabled: remote game-server agent is not configured: %v", err)
 			return nil
 		}

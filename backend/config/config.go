@@ -95,112 +95,112 @@ type Config struct {
 }
 
 func (c *Config) IsProduction() bool {
-\treturn c != nil && strings.EqualFold(c.AppEnv, "production")
+	return c != nil && strings.EqualFold(c.AppEnv, "production")
 }
 
 func (c *Config) GSMRemote() bool {
-\treturn c != nil && strings.TrimSpace(c.GSMAgentURL) != ""
+	return c != nil && strings.TrimSpace(c.GSMAgentURL) != ""
 }
 
 func (c *Config) R2Enabled() bool {
-\treturn c != nil && strings.TrimSpace(c.R2Bucket) != ""
+	return c != nil && strings.TrimSpace(c.R2Bucket) != ""
 }
 
 func isLoopbackHost(host string) bool {
-\thost = strings.TrimSpace(host)
-\tif host == "" || strings.EqualFold(host, "localhost") {
-\t\treturn true
-\t}
-\tif h, _, err := net.SplitHostPort(host); err == nil {
-\t\thost = h
-\t}
-\tip := net.ParseIP(strings.Trim(host, "[]"))
-\treturn ip != nil && ip.IsLoopback()
+	host = strings.TrimSpace(host)
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c *Config) Validate() error {
-\tvar problems []string
-\tadd := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
+	var problems []string
+	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
-\tif c.GSMRemote() {
-\t\tu, err := url.Parse(c.GSMAgentURL)
-\t\tif err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-\t\t\tadd("GSM_AGENT_URL must be an absolute http(s) URL")
-\t\t} else if c.IsProduction() && u.Scheme != "https" {
-\t\t\tadd("GSM_AGENT_URL must use https in production")
-\t\t}
-\t\tif len(c.GSMAgentToken) < 32 {
-\t\t\tadd("GSM_AGENT_TOKEN must be at least 32 characters when GSM_AGENT_URL is set")
-\t\t}
-\t}
-\tif len(c.NetcodePrivateKey) != 0 && len(c.NetcodePrivateKey) != 32 {
-\t\tadd("NETCODE_PRIVATE_KEY must be 64 hex characters")
-\t}
-\tif c.GSMEnabled {
-\t\tif c.GSMRemote() && c.GSMPublicHost == "" {
-\t\t\tadd("GSM_PUBLIC_HOST must name the public UDP gameserver hostname")
-\t\t}
-\t\tif c.IsProduction() && !c.GSMRemote() {
-\t\t\tadd("GSM_AGENT_URL is required in production; Cloudflare Containers cannot host UDP gameservers")
-\t\t}
-\t\tif len(c.NetcodePrivateKey) != 32 {
-\t\t\tadd("NETCODE_PRIVATE_KEY is required when GSM_ENABLED=true")
-\t\t}
-\t\tif c.NetcodeProtocolID == 0 {
-\t\t\tadd("NETCODE_PROTOCOL_ID must be a non-zero unsigned integer when GSM_ENABLED=true")
-\t\t}
-\t\tif len(strings.TrimSpace(c.GameserverAPIKey)) < 32 {
-\t\t\tadd("GAMESERVER_API_KEY must be a random secret of at least 32 characters when GSM_ENABLED=true")
-\t\t}
-\t\tif c.PublicBaseURL != "" && c.GSMPublicHost != "" {
-\t\t\tif u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), c.GSMPublicHost) {
-\t\t\t\tadd("GSM_PUBLIC_HOST must not be the platform web hostname; Cloudflare Workers do not carry raw UDP")
-\t\t\t}
-\t\t}
-\t}
-\tif c.IsProduction() {
-\t\tif !c.RunWithDatabase || c.DBHost == "" || c.DBUser == "" || c.DBPass == "" || c.DBName == "" {
-\t\t\tadd("RUN_WITH_DATABASE and DB_HOST, DB_USER, DB_PASS, DB_NAME are required in production")
-\t\t}
-\t\tif len(c.AltchaHMACKey) < 32 || strings.HasPrefix(c.AltchaHMACKey, "Please-Put") {
-\t\t\tadd("ALTCHA_HMAC_KEY must be a random secret of at least 32 characters")
-\t\t}
-\t\tif len(c.RegistrationIPSalt) < 32 || strings.HasPrefix(c.RegistrationIPSalt, "Please-Put") {
-\t\t\tadd("REGISTRATION_IP_SALT must be a random secret of at least 32 characters")
-\t\t}
-\t\tif !c.SessionSecure {
-\t\t\tadd("SESSION_SECURE must be true in production")
-\t\t}
-\t\tif !c.RedisRequired {
-\t\t\tadd("REDIS_REQUIRED must be true in production")
-\t\t}
-\t\tif c.RedisURL == "" && c.RedisAddr == "" {
-\t\t\tadd("REDIS_URL or REDIS_ADDR is required in production")
-\t\t}
-\t\tif c.RunWithDatabase && !c.DBTLS && !isLoopbackHost(c.DBHost) {
-\t\t\tadd("DB_TLS must be true for a non-local MySQL host in production")
-\t\t}
-\t\tif !c.R2Enabled() {
-\t\t\tadd("R2_BUCKET is required in production because the container filesystem is ephemeral")
-\t\t}
-\t\tif c.PublicBaseURL == "" {
-\t\t\tadd("PUBLIC_BASE_URL is required in production")
-\t\t}
-\t}
-\tif c.R2Enabled() {
-\t\tif c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2AccountID == "" && c.R2Endpoint == "") {
-\t\t\tadd("R2_BUCKET requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT)")
-\t\t}
-\t}
-\tif c.R2PublicBaseURL != "" {
-\t\tif u, err := url.Parse(c.R2PublicBaseURL); err != nil || u.Scheme != "https" || u.Host == "" {
-\t\t\tadd("R2_PUBLIC_BASE_URL must be an absolute https URL")
-\t\t}
-\t}
-\tif len(problems) > 0 {
-\t\treturn errors.New("invalid configuration:\n  - " + strings.Join(problems, "\n  - "))
-\t}
-\treturn nil
+	if c.GSMRemote() {
+		u, err := url.Parse(c.GSMAgentURL)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			add("GSM_AGENT_URL must be an absolute http(s) URL")
+		} else if c.IsProduction() && u.Scheme != "https" {
+			add("GSM_AGENT_URL must use https in production")
+		}
+		if len(c.GSMAgentToken) < 32 {
+			add("GSM_AGENT_TOKEN must be at least 32 characters when GSM_AGENT_URL is set")
+		}
+	}
+	if len(c.NetcodePrivateKey) != 0 && len(c.NetcodePrivateKey) != 32 {
+		add("NETCODE_PRIVATE_KEY must be 64 hex characters")
+	}
+	if c.GSMEnabled {
+		if c.GSMRemote() && c.GSMPublicHost == "" {
+			add("GSM_PUBLIC_HOST must name the public UDP gameserver hostname")
+		}
+		if c.IsProduction() && !c.GSMRemote() {
+			add("GSM_AGENT_URL is required in production; Cloudflare Containers cannot host UDP gameservers")
+		}
+		if len(c.NetcodePrivateKey) != 32 {
+			add("NETCODE_PRIVATE_KEY is required when GSM_ENABLED=true")
+		}
+		if c.NetcodeProtocolID == 0 {
+			add("NETCODE_PROTOCOL_ID must be a non-zero unsigned integer when GSM_ENABLED=true")
+		}
+		if len(strings.TrimSpace(c.GameserverAPIKey)) < 32 {
+			add("GAMESERVER_API_KEY must be a random secret of at least 32 characters when GSM_ENABLED=true")
+		}
+		if c.PublicBaseURL != "" && c.GSMPublicHost != "" {
+			if u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), c.GSMPublicHost) {
+				add("GSM_PUBLIC_HOST must not be the platform web hostname; Cloudflare Workers do not carry raw UDP")
+			}
+		}
+	}
+	if c.IsProduction() {
+		if !c.RunWithDatabase || c.DBHost == "" || c.DBUser == "" || c.DBPass == "" || c.DBName == "" {
+			add("RUN_WITH_DATABASE and DB_HOST, DB_USER, DB_PASS, DB_NAME are required in production")
+		}
+		if len(c.AltchaHMACKey) < 32 || strings.HasPrefix(c.AltchaHMACKey, "Please-Put") {
+			add("ALTCHA_HMAC_KEY must be a random secret of at least 32 characters")
+		}
+		if len(c.RegistrationIPSalt) < 32 || strings.HasPrefix(c.RegistrationIPSalt, "Please-Put") {
+			add("REGISTRATION_IP_SALT must be a random secret of at least 32 characters")
+		}
+		if !c.SessionSecure {
+			add("SESSION_SECURE must be true in production")
+		}
+		if !c.RedisRequired {
+			add("REDIS_REQUIRED must be true in production")
+		}
+		if c.RedisURL == "" && c.RedisAddr == "" {
+			add("REDIS_URL or REDIS_ADDR is required in production")
+		}
+		if c.RunWithDatabase && !c.DBTLS && !isLoopbackHost(c.DBHost) {
+			add("DB_TLS must be true for a non-local MySQL host in production")
+		}
+		if !c.R2Enabled() {
+			add("R2_BUCKET is required in production because the container filesystem is ephemeral")
+		}
+		if c.PublicBaseURL == "" {
+			add("PUBLIC_BASE_URL is required in production")
+		}
+	}
+	if c.R2Enabled() {
+		if c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2AccountID == "" && c.R2Endpoint == "") {
+			add("R2_BUCKET requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT)")
+		}
+	}
+	if c.R2PublicBaseURL != "" {
+		if u, err := url.Parse(c.R2PublicBaseURL); err != nil || u.Scheme != "https" || u.Host == "" {
+			add("R2_PUBLIC_BASE_URL must be an absolute https URL")
+		}
+	}
+	if len(problems) > 0 {
+		return errors.New("invalid configuration:\n  - " + strings.Join(problems, "\n  - "))
+	}
+	return nil
 }
 
 var Global *Config
@@ -385,11 +385,11 @@ func Load() (*Config, error) {
 	}
 	gsmServerBin := strings.TrimSpace(os.Getenv("GSM_SERVER_BIN"))
 	if gsmServerBin == "" {
-		gsmServerBin = `C:\Users\xampp\Documents\VERTIGO-Full\A\target\debug\RaveEngineServer.exe`
+		gsmServerBin = `C:\Users\xampp\Documents\VERTIGO-Full\A	arget\debug\RaveEngineServer.exe`
 	}
 	gsmServerWorkdir := strings.TrimSpace(os.Getenv("GSM_SERVER_WORKDIR"))
 	if gsmServerWorkdir == "" {
-		gsmServerWorkdir = `C:\Users\xampp\Documents\VERTIGO-Full\A\target\debug`
+		gsmServerWorkdir = `C:\Users\xampp\Documents\VERTIGO-Full\A	arget\debug`
 	}
 	gsmServerMap := strings.TrimSpace(os.Getenv("GSM_SERVER_MAP"))
 	if gsmServerMap == "" {
@@ -434,55 +434,55 @@ func Load() (*Config, error) {
 	if filterTimeout <= 0 {
 		filterTimeout = 20 * time.Second
 	}
-\tvar netcodeKey []byte
-\tif raw := strings.TrimSpace(os.Getenv("NETCODE_PRIVATE_KEY")); raw != "" {
-\t\tdecoded, err := hex.DecodeString(raw)
-\t\tif err != nil || len(decoded) != 32 {
-\t\t\treturn nil, errors.New("NETCODE_PRIVATE_KEY must be 64 hex characters")
-\t\t}
-\t\tnetcodeKey = decoded
-\t}
-\tvar netcodeProtocolID uint64
-\tif raw := strings.TrimSpace(os.Getenv("NETCODE_PROTOCOL_ID")); raw != "" {
-\t\tparsed, err := strconv.ParseUint(raw, 10, 64)
-\t\tif err != nil {
-\t\t\treturn nil, errors.New("NETCODE_PROTOCOL_ID must be an unsigned integer")
-\t\t}
-\t\tnetcodeProtocolID = parsed
-\t}
-\tpublicBaseURL := strings.TrimSuffix(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/")
-\tif publicBaseURL == "" {
-\t\tpublicBaseURL = "https://vertexia.wempos-forum.com"
-\t}
-\tr2Bucket := strings.TrimSpace(os.Getenv("R2_BUCKET"))
-\tif r2Bucket == "" {
-\t\tr2Bucket = strings.TrimSpace(os.Getenv("R2_BUCKET_NAME"))
-\t}
-\tr2AccessKeyID := strings.TrimSpace(os.Getenv("R2_ACCESS_KEY_ID"))
-\tif r2AccessKeyID == "" {
-\t\tr2AccessKeyID = strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
-\t}
-\tr2SecretAccessKey := strings.TrimSpace(os.Getenv("R2_SECRET_ACCESS_KEY"))
-\tif r2SecretAccessKey == "" {
-\t\tr2SecretAccessKey = strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
-\t}
-\tuploadMaxBytes, _ := strconv.ParseInt(os.Getenv("UPLOAD_MAX_BYTES"), 10, 64)
-\tif uploadMaxBytes <= 0 {
-\t\tuploadMaxBytes = 40 << 20
-\t}
-\tgsmHeartbeatTimeout, _ := time.ParseDuration(os.Getenv("GSM_HEARTBEAT_TIMEOUT"))
-\tif gsmHeartbeatTimeout <= 0 {
-\t\tgsmHeartbeatTimeout = 90 * time.Second
-\t}
-\tgsmMaxServers, _ := strconv.Atoi(os.Getenv("GSM_MAX_SERVERS"))
-\tgsmReadyTimeout, _ := time.ParseDuration(os.Getenv("GSM_READY_TIMEOUT"))
-\tif gsmReadyTimeout <= 0 {
-\t\tgsmReadyTimeout = 30 * time.Second
-\t}
-\tnetcodeTokenTTL, _ := time.ParseDuration(os.Getenv("NETCODE_TOKEN_TTL"))
-\tif netcodeTokenTTL <= 0 {
-\t\tnetcodeTokenTTL = 30 * time.Second
-\t}
+	var netcodeKey []byte
+	if raw := strings.TrimSpace(os.Getenv("NETCODE_PRIVATE_KEY")); raw != "" {
+		decoded, err := hex.DecodeString(raw)
+		if err != nil || len(decoded) != 32 {
+			return nil, errors.New("NETCODE_PRIVATE_KEY must be 64 hex characters")
+		}
+		netcodeKey = decoded
+	}
+	var netcodeProtocolID uint64
+	if raw := strings.TrimSpace(os.Getenv("NETCODE_PROTOCOL_ID")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return nil, errors.New("NETCODE_PROTOCOL_ID must be an unsigned integer")
+		}
+		netcodeProtocolID = parsed
+	}
+	publicBaseURL := strings.TrimSuffix(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/")
+	if publicBaseURL == "" {
+		publicBaseURL = "https://vertexia.wempos-forum.com"
+	}
+	r2Bucket := strings.TrimSpace(os.Getenv("R2_BUCKET"))
+	if r2Bucket == "" {
+		r2Bucket = strings.TrimSpace(os.Getenv("R2_BUCKET_NAME"))
+	}
+	r2AccessKeyID := strings.TrimSpace(os.Getenv("R2_ACCESS_KEY_ID"))
+	if r2AccessKeyID == "" {
+		r2AccessKeyID = strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
+	}
+	r2SecretAccessKey := strings.TrimSpace(os.Getenv("R2_SECRET_ACCESS_KEY"))
+	if r2SecretAccessKey == "" {
+		r2SecretAccessKey = strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	}
+	uploadMaxBytes, _ := strconv.ParseInt(os.Getenv("UPLOAD_MAX_BYTES"), 10, 64)
+	if uploadMaxBytes <= 0 {
+		uploadMaxBytes = 40 << 20
+	}
+	gsmHeartbeatTimeout, _ := time.ParseDuration(os.Getenv("GSM_HEARTBEAT_TIMEOUT"))
+	if gsmHeartbeatTimeout <= 0 {
+		gsmHeartbeatTimeout = 90 * time.Second
+	}
+	gsmMaxServers, _ := strconv.Atoi(os.Getenv("GSM_MAX_SERVERS"))
+	gsmReadyTimeout, _ := time.ParseDuration(os.Getenv("GSM_READY_TIMEOUT"))
+	if gsmReadyTimeout <= 0 {
+		gsmReadyTimeout = 30 * time.Second
+	}
+	netcodeTokenTTL, _ := time.ParseDuration(os.Getenv("NETCODE_TOKEN_TTL"))
+	if netcodeTokenTTL <= 0 {
+		netcodeTokenTTL = 30 * time.Second
+	}
 
 
 	liveTimerEnabled, _ := strconv.ParseBool(os.Getenv("LIVETIMER_ENABLED"))
@@ -551,27 +551,27 @@ func Load() (*Config, error) {
 		TypeSafeModel:          typeSafeModel,
 		FilterTimeout:          filterTimeout,
 
-\t\tAppEnv:            appEnv,
-\t\tPublicBaseURL:     publicBaseURL,
-\t\tRedisURL:          redisURL,
-\t\tRedisTLS:          redisTLS,
-\t\tRedisRequired:     redisRequired,
-\t\tDBTLS:             dbTLS,
-\t\tNetcodePrivateKey: netcodeKey,
-\t\tNetcodeProtocolID: netcodeProtocolID,
-\t\tNetcodeTokenTTL:   netcodeTokenTTL,
-\t\tGSMHeartbeatTimeout: gsmHeartbeatTimeout,
-\t\tGSMMaxServers:       gsmMaxServers,
-\t\tGSMReadyTimeout:     gsmReadyTimeout,
-\t\tGSMPublicIP:         strings.TrimSpace(os.Getenv("GSM_PUBLIC_IP")),
-\t\tR2AccountID:       strings.TrimSpace(os.Getenv("R2_ACCOUNT_ID")),
-\t\tR2Bucket:          r2Bucket,
-\t\tR2AccessKeyID:     r2AccessKeyID,
-\t\tR2SecretAccessKey: r2SecretAccessKey,
-\t\tR2PublicBaseURL:   strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_PUBLIC_BASE_URL")), "/"),
-\t\tR2Endpoint:        strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_ENDPOINT")), "/"),
-\t\tStorageDir:        strings.TrimSpace(os.Getenv("STORAGE_DIR")),
-\t\tUploadMaxBytes:    uploadMaxBytes,
+		AppEnv:            appEnv,
+		PublicBaseURL:     publicBaseURL,
+		RedisURL:          redisURL,
+		RedisTLS:          redisTLS,
+		RedisRequired:     redisRequired,
+		DBTLS:             dbTLS,
+		NetcodePrivateKey: netcodeKey,
+		NetcodeProtocolID: netcodeProtocolID,
+		NetcodeTokenTTL:   netcodeTokenTTL,
+		GSMHeartbeatTimeout: gsmHeartbeatTimeout,
+		GSMMaxServers:       gsmMaxServers,
+		GSMReadyTimeout:     gsmReadyTimeout,
+		GSMPublicIP:         strings.TrimSpace(os.Getenv("GSM_PUBLIC_IP")),
+		R2AccountID:       strings.TrimSpace(os.Getenv("R2_ACCOUNT_ID")),
+		R2Bucket:          r2Bucket,
+		R2AccessKeyID:     r2AccessKeyID,
+		R2SecretAccessKey: r2SecretAccessKey,
+		R2PublicBaseURL:   strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_PUBLIC_BASE_URL")), "/"),
+		R2Endpoint:        strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_ENDPOINT")), "/"),
+		StorageDir:        strings.TrimSpace(os.Getenv("STORAGE_DIR")),
+		UploadMaxBytes:    uploadMaxBytes,
 	}
 
 	if err := cfg.Validate(); err != nil {
