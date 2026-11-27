@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/session"
 	"vertexia-frontend/backend/config"
+	"vertexia-frontend/backend/models"
 	"vertexia-frontend/backend/service"
 )
 
