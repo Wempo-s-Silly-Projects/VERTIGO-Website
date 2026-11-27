@@ -25,7 +25,6 @@
     {
       "class_name": "VertexiaContainer",
       "scheduling_policy": "durable_object",
-      "max_instances": 1,
       "images": {
         "base": {
           "dockerfile": "./Dockerfile"
