@@ -136,8 +136,12 @@ func ProcessRunning(pid int) bool {
 	return processRunning(pid)
 }
 
-// LogPath returns the log file of server id.
+// LogPath returns the log file of a valid server id. Invalid identifiers
+// never become filesystem paths.
 func (l *ProcessLauncher) LogPath(id string) string {
+	if !ValidID(id) {
+		return ""
+	}
 	return filepath.Join(l.opts.LogsDir, "gs-"+id+".log")
 }
 
@@ -145,11 +149,24 @@ func (l *ProcessLauncher) logPath(id string) string {
 	return l.LogPath(id)
 }
 
+// LogTail returns the bounded log tail for a valid server id.
+func (l *ProcessLauncher) LogTail(id string) string {
+	path := l.logPath(id)
+	if path == "" {
+		return "no log output"
+	}
+	return logTail(path)
+}
+
 func (l *ProcessLauncher) logFile(id string) (*os.File, int64, error) {
+	path := l.logPath(id)
+	if path == "" {
+		return nil, 0, errors.New("invalid gameserver id")
+	}
 	if err := os.MkdirAll(l.opts.LogsDir, 0750); err != nil {
 		return nil, 0, err
 	}
-	f, err := os.OpenFile(l.logPath(id), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -158,11 +175,6 @@ func (l *ProcessLauncher) logFile(id string) (*os.File, int64, error) {
 		offset = st.Size()
 	}
 	return f, offset, nil
-}
-
-// LogTail summarizes the last lines of a log file.
-func LogTail(path string) string {
-	return logTail(path)
 }
 
 func logTail(path string) string {
@@ -358,6 +370,9 @@ func (l *ProcessLauncher) running(pid int) bool {
 
 func (l *ProcessLauncher) WaitHealthy(id string, port int, pid int, timeout time.Duration) error {
 	path := l.logPath(id)
+	if path == "" {
+		return errors.New("invalid gameserver id")
+	}
 	var offset int64
 	if info := l.child(pid); info != nil {
 		offset = info.logOffset
