@@ -28,6 +28,12 @@ type VertexiaRuntimeEnv = Env & {
   R2_SECRET_ACCESS_KEY?: string;
   UPLOAD_MAX_BYTES?: string;
   STORAGE_DIR?: string;
+  SITELOCK_PASSWORD?: string;
+  GSM_PORT_RANGE?: string;
+  GSM_SERVER_BIN?: string;
+  GSM_SERVER_WORKDIR?: string;
+  GSM_SERVER_MAP?: string;
+  GSM_SERVER_LOGS_DIR?: string;
   TYPESAFE_API_KEY?: string;
   GAMESERVER_API_KEY?: string;
   GSM_AGENT_URL?: string;
@@ -87,8 +93,14 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       const url = new URL(request.url);
       url.protocol = "http:";
       url.host = "vertexia-container";
-      const forwarded = new Request(url, request);
-      forwarded.headers.delete("host");
+      const headers = new Headers(request.headers);
+      for (const name of [...headers.keys()]) {
+        if (name.startsWith("x-forwarded-")) headers.delete(name);
+      }
+      headers.delete("forwarded");
+      headers.delete("x-real-ip");
+      headers.delete("host");
+      const forwarded = new Request(url, { ...request, headers });
 
       const connectingIP = request.headers.get("CF-Connecting-IP");
       if (connectingIP) {
@@ -131,8 +143,8 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       ["DB_PASS", this.env.DB_PASS],
       ["DB_NAME", this.env.DB_NAME],
       ["ALTCHA_HMAC_KEY", this.env.ALTCHA_HMAC_KEY],
-      ["AWS_ACCESS_KEY_ID", this.env.AWS_ACCESS_KEY_ID],
-      ["AWS_SECRET_ACCESS_KEY", this.env.AWS_SECRET_ACCESS_KEY],
+      ["R2_ACCESS_KEY_ID", this.env.R2_ACCESS_KEY_ID || this.env.AWS_ACCESS_KEY_ID],
+      ["R2_SECRET_ACCESS_KEY", this.env.R2_SECRET_ACCESS_KEY || this.env.AWS_SECRET_ACCESS_KEY],
     ];
     const missing = required.filter(([, value]) => !value).map(([name]) => name);
     if (missing.length > 0) {
@@ -178,6 +190,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           DB_MAX_OPEN_CONNS: "20",
           DB_MAX_IDLE_CONNS: "5",
           DB_CONN_MAX_LIFETIME: "5m",
+          DB_CONN_MAX_IDLE_TIME: "5m",
           GSM_ENABLED: gsmConfigured ? "true" : "false",
           GSM_AGENT_URL: this.env.GSM_AGENT_URL || "",
           GSM_AGENT_SECRET: this.env.GSM_AGENT_SECRET || "",
@@ -185,6 +198,11 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           GSM_PUBLIC_HOST: this.env.GSM_PUBLIC_HOST || "",
           GSM_PORT_MIN: this.env.GSM_PORT_MIN || "5100",
           GSM_PORT_MAX: this.env.GSM_PORT_MAX || "5250",
+          GSM_PORT_RANGE: this.env.GSM_PORT_RANGE || "",
+          GSM_SERVER_BIN: this.env.GSM_SERVER_BIN || "",
+          GSM_SERVER_WORKDIR: this.env.GSM_SERVER_WORKDIR || "",
+          GSM_SERVER_MAP: this.env.GSM_SERVER_MAP || "assets/maps/default.vrtx",
+          GSM_SERVER_LOGS_DIR: this.env.GSM_SERVER_LOGS_DIR || "./logs/gsm",
           GSM_MAX_PLAYERS_DEFAULT: this.env.GSM_MAX_PLAYERS_DEFAULT || "100",
           GSM_MIN_PLAYERS_DEFAULT: this.env.GSM_MIN_PLAYERS_DEFAULT || "2",
           GSM_IDLE_TIMEOUT: this.env.GSM_IDLE_TIMEOUT || "5m",
@@ -220,6 +238,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           FILTER_TIMEOUT: this.env.FILTER_TIMEOUT || "20s",
           TRUSTED_PROXIES: this.env.TRUSTED_PROXIES || "0.0.0.0/0,::/0",
           SITELOCK_ENABLED: this.env.SITELOCK_ENABLED || "false",
+          SITELOCK_PASSWORD: this.env.SITELOCK_PASSWORD || "",
           LIVETIMER_ENABLED: this.env.LIVETIMER_ENABLED || "false",
           LIVETIMER_DURATION: this.env.LIVETIMER_DURATION || "",
           FILTER_ENABLED: this.env.TYPESAFE_API_KEY ? "true" : "false",
@@ -229,6 +248,8 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           R2_ACCESS_KEY_ID: this.env.R2_ACCESS_KEY_ID || this.env.AWS_ACCESS_KEY_ID!,
           R2_SECRET_ACCESS_KEY: this.env.R2_SECRET_ACCESS_KEY || this.env.AWS_SECRET_ACCESS_KEY!,
           R2_PUBLIC_BASE_URL: this.env.R2_PUBLIC_BASE_URL || "",
+          UPLOAD_MAX_BYTES: this.env.UPLOAD_MAX_BYTES || String(40 * 1024 * 1024),
+          STORAGE_DIR: this.env.STORAGE_DIR || "./uploads",
           R2_ENDPOINT: this.env.R2_ENDPOINT || "",
           AWS_ACCESS_KEY_ID: this.env.R2_ACCESS_KEY_ID || this.env.AWS_ACCESS_KEY_ID!,
           AWS_SECRET_ACCESS_KEY: this.env.R2_SECRET_ACCESS_KEY || this.env.AWS_SECRET_ACCESS_KEY!,
