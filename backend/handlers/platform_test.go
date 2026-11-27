@@ -11,6 +11,8 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"vertexia-frontend/backend/config"
+	"vertexia-frontend/backend/models"
+	"vertexia-frontend/backend/service"
 	"vertexia-frontend/backend/service/gsm"
 )
 
@@ -270,5 +272,14 @@ func TestExchangeEndpointRejectsTokenKindEscalation(t *testing.T) {
 		if res.StatusCode != fiber.StatusBadRequest {
 			t.Errorf("%s accepted a mismatched token kind: status=%d", tc.path, res.StatusCode)
 		}
+	}
+}
+func TestLaunchCodeFailsWhenAuthorizationServiceIsUnavailable(t *testing.T) {
+	previous := service.StudioAuth
+	service.StudioAuth = nil
+	defer func() { service.StudioAuth = previous }()
+
+	if _, err := launchCode(&models.User{ID: 42}); err == nil {
+		t.Fatal("launchCode must not return an empty successful credential")
 	}
 }
