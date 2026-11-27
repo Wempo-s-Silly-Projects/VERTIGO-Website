@@ -123,16 +123,27 @@ func newAgent(cfg config) (*agent, error) {
 func (a *agent) recordPath(id string) string { return filepath.Join(a.cfg.stateDir, id+".json") }
 func (a *agent) logPath(id string) string { return filepath.Join(a.cfg.logDir, "gs-"+id+".log") }
 
-func processMatches(pid int, id string) bool {
-	if pid <= 0 { return false }
-	proc, err := os.FindProcess(pid)
-	if err != nil || proc.Signal(syscall.Signal(0)) != nil { return false }
-	raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
-	if err != nil { return false }
-	cmdline := strings.ReplaceAll(string(raw), "\x00", " ")
-	return strings.Contains(cmdline, "--server-id "+id)
+func hasServerIDArg(raw []byte, id string) bool {
+	args := strings.Split(string(raw), "\x00")
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--server-id" && args[i+1] == id {
+			return true
+		}
+	}
+	return false
 }
 
+func processMatches(pid int, id string) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil || proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	return err == nil && hasServerIDArg(raw, id)
+}
 func (a *agent) running(record serverRecord) bool { return processMatches(record.PID, record.ID) }
 
 func udpPortBound(port int) bool {
