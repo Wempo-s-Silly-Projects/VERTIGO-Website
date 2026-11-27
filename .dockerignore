@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+.pnpm-store
+.env
+.env.*
+.dev.vars
+wrangler.toml
+wrangler.json
+wrangler.jsonc
+*.log
+logs/
+uploads/
+static/uploads/
+static/renders/
