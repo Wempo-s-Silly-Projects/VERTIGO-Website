@@ -15,11 +15,18 @@ mkdir -p /mnt/r2
   -f "${R2_BUCKET_NAME}" /mnt/r2 &
 fuse_pid=$!
 
+app_pid=""
 cleanup() {
+  if [ -n "$app_pid" ]; then
+    kill -TERM "$app_pid" 2>/dev/null || true
+    wait "$app_pid" 2>/dev/null || true
+  fi
   fusermount -u /mnt/r2 2>/dev/null || true
   kill "$fuse_pid" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 attempt=0
 until mountpoint -q /mnt/r2; do
@@ -52,4 +59,11 @@ ln -sfn /mnt/r2/uploads /app/uploads
 ln -sfn /mnt/r2/renders /app/static/renders
 
 echo "VERTEXIA persistent asset storage mounted"
-exec /usr/local/bin/vertexia
+/usr/local/bin/vertexia &
+app_pid=$!
+set +e
+wait "$app_pid"
+status=$?
+set -e
+app_pid=""
+exit "$status"
