@@ -42,6 +42,8 @@ jobs:
         run: corepack enable
       - name: Install
         run: pnpm install --no-frozen-lockfile
+      - name: Generate Worker types
+        run: pnpm types
       - name: Typecheck
         run: pnpm check
       - name: Export generated lockfile for commit
