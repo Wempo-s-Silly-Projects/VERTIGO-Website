@@ -122,7 +122,7 @@ func (c *Config) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
-	if c.GSMRemote() {
+	if c.GSMEnabled && c.GSMRemote() {
 		u, err := url.Parse(c.GSMAgentURL)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 			add("GSM_AGENT_URL must be an absolute http(s) URL")
@@ -153,7 +153,11 @@ func (c *Config) Validate() error {
 			add("GAMESERVER_API_KEY must be a random secret of at least 32 characters when GSM_ENABLED=true")
 		}
 		if c.PublicBaseURL != "" && c.GSMPublicHost != "" {
-			if u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), c.GSMPublicHost) {
+			gameHost := strings.TrimSpace(c.GSMPublicHost)
+			if h, _, err := net.SplitHostPort(gameHost); err == nil {
+				gameHost = h
+			}
+			if u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), gameHost) {
 				add("GSM_PUBLIC_HOST must not be the platform web hostname; Cloudflare Workers do not carry raw UDP")
 			}
 		}
@@ -190,6 +194,24 @@ func (c *Config) Validate() error {
 	if c.R2Enabled() {
 		if c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2AccountID == "" && c.R2Endpoint == "") {
 			add("R2_BUCKET requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT)")
+		}
+	}
+	if c.IsProduction() && c.PublicBaseURL != "" {
+		u, err := url.Parse(c.PublicBaseURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			add("PUBLIC_BASE_URL must be an absolute https URL in production")
+		}
+	}
+	if c.RedisURL != "" {
+		u, err := url.Parse(c.RedisURL)
+		if err != nil || u.Host == "" || (u.Scheme != "redis" && u.Scheme != "rediss") {
+			add("REDIS_URL must use redis:// or rediss://")
+		}
+	}
+	if c.R2Endpoint != "" {
+		u, err := url.Parse(c.R2Endpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			add("R2_ENDPOINT must be an absolute https URL")
 		}
 	}
 	if c.R2PublicBaseURL != "" {
