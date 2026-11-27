@@ -3,6 +3,8 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"strings"
 	_ "github.com/go-sql-driver/mysql"
 	"vertexia-frontend/backend/config"
 )
@@ -22,6 +24,9 @@ func Connect(cfg *config.Config) error {
 		cfg.DBPort,
 		cfg.DBName,
 	)
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("DB_TLS")), "true") {
+		dsn += "&tls=true"
+	}
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
