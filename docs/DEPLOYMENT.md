@@ -157,8 +157,7 @@ Clients (RaveEngine client and Studio) read the platform origin from
 `/Dockerfile` builds a static Go binary (pinned `golang:1.25.14-alpine3.24`
 by digest) into `alpine:3.24.4` (pinned by digest), runs as uid 10001,
 listens on `PORT=8080`, and only the runtime directories are writable. The
-Worker class is `VertexiaPlatform` with binding `VERTEXIA_PLATFORM`, instance
-type `standard-1`, `max_instances: 4`. Health endpoints:
+The Worker exports the `VertexiaContainer` Durable Object with binding `VERTEXIA_CONTAINER`. It starts the `standard-1` Container instance. Health endpoints:
 
 * `GET /healthz`: process is up.
 * `GET /readyz`: MySQL and Redis respond.
@@ -169,7 +168,6 @@ can land on any instance.
 ## 7. Build and deploy
 
 ```sh
-cd <repo-root>
 pnpm install
 pnpm run types
 pnpm run check
@@ -192,9 +190,7 @@ which reports the agent's `/v1/health` in remote mode.
 
 ## 8. Rollback
 
-* Worker and container: `pnpm exec wrangler deployments list`, then
-  `pnpm exec wrangler rollback <version-id>`. Container images are versioned
-  with the Worker.
+* Worker and Container: inspect available versions with `pnpm exec wrangler deployments list`. Rollback requires a reviewed release change; use the repository's approved deployment workflow rather than invoking a direct deploy command.
 * Agent: keep the previous binary as `/usr/local/bin/gsm-agent.prev`; swap it
   back and `systemctl restart gsm-agent`. Running gameservers keep running.
 * Data: schema is unchanged by this work. Redis holds only rebuildable state
