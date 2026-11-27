@@ -96,7 +96,12 @@ func (s *TokenService) Issue(userID int, kind string) (string, AccessToken, erro
 	if err := kv.Set(ctx, tokenKeyPrefix+h, payload, s.ttl(kind)); err != nil {
 		return "", AccessToken{}, err
 	}
-	_ = kv.SAdd(ctx, userTokensPrefix+strconv.Itoa(userID), h)
+	// A token must not be issued unless it is also indexed for user-wide
+	// revocation. Roll back the token record if the index write fails.
+	if err := kv.SAdd(ctx, userTokensPrefix+strconv.Itoa(userID), h); err != nil {
+		_ = kv.Del(ctx, tokenKeyPrefix+h)
+		return "", AccessToken{}, err
+	}
 	return raw, tok, nil
 }
 
