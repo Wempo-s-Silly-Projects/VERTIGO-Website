@@ -173,7 +173,7 @@ func Middleware(secret []byte, nonces NonceStore, logger *slog.Logger, next http
 			if status == http.StatusServiceUnavailable {
 				reason = "authentication unavailable"
 			}
-			logger.Warn("gsm-agent request rejected", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr, "reason", reason)
+			logger.Warn("gsm-agent request rejected", "status", status, "reason", reason)
 			if status == http.StatusUnauthorized {
 				writeAuthError(w, status, "unauthorized")
 			} else {
