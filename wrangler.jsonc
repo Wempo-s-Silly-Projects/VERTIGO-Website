@@ -1,0 +1,53 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "vertexia",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-26",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "vertexia.wempos-forum.com",
+      "custom_domain": true
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05
+    }
+  },
+  "containers": [
+    {
+      "class_name": "VertexiaContainer",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "./Dockerfile"
+        }
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VERTEXIA_CONTAINER",
+        "class_name": "VertexiaContainer"
+      }
+    ]
+  },
+  "exports": {
+    "VertexiaContainer": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "vars": {
+    "R2_BUCKET_NAME": "vertexia-assets",
+    "R2_ACCOUNT_ID": "1fd10e6fd4237e9d02d3a7d780930921"
+  }
+}

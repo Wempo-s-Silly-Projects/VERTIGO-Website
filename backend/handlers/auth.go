@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/session"
 	"vertexia-frontend/backend/config"
+	"vertexia-frontend/backend/models"
 	"vertexia-frontend/backend/service"
 )
 
@@ -269,10 +270,26 @@ func Logout(c fiber.Ctx) error {
 
 func ValidateUkey(c fiber.Ctx) error {
 	apiKey := c.Get("X-Gameserver-Key")
-	ukey := c.Query("ukey")
+	if err := service.Auth.ValidateGameserverKey(apiKey); err != nil {
+		log.Printf("GAMESERVER_AUTH: Key mismatch. Unauthorized request.")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized gameserver request"})
+	}
 
-	user, err := service.Auth.ValidateUkey(apiKey, ukey)
+	var user *models.User
+	var err error
+	if hasAccessToken(c) {
+		var token service.AccessToken
+		user, token, err = bearerUser(c)
+		if err == nil && token.Kind != service.TokenKindClient {
+			err = service.ErrInvalidToken
+		}
+	} else {
+		user, err = service.Auth.ValidateUkey(apiKey, legacyUnikey(c))
+	}
 	if err != nil {
+		if err == service.ErrInvalidToken {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid or expired client access token"})
+		}
 		if err.Error() == "unauthorized" {
 			log.Printf("GAMESERVER_AUTH: Key mismatch. Unauthorized request.")
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
