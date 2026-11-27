@@ -24,7 +24,7 @@ func Connect(cfg *config.Config) error {
 		cfg.DBPort,
 		cfg.DBName,
 	)
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("DB_TLS")), "true") {
+	if cfg.DBTLS || strings.EqualFold(strings.TrimSpace(os.Getenv("DB_TLS")), "true") {
 		dsn += "&tls=true"
 	}
 

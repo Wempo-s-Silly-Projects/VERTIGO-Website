@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"vertexia-frontend/backend/config"
@@ -115,8 +116,17 @@ func initGSMService() *gsm.Manager {
 	var launcher gsm.Launcher
 	if cfg.GSMAgentURL != "" {
 		var err error
-		store, err = gsm.NewRedisStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		redisAddr := cfg.RedisAddr
+		if cfg.RedisURL != "" {
+			redisAddr = cfg.RedisURL
+		} else if cfg.RedisTLS && !strings.HasPrefix(redisAddr, "rediss://") && !strings.HasPrefix(redisAddr, "redis://") {
+			redisAddr = "rediss://" + redisAddr
+		}
+		store, err = gsm.NewRedisStore(redisAddr, cfg.RedisPassword, cfg.RedisDB)
 		if err != nil {
+			if cfg.IsProduction() {
+				log.Fatalf("GSM persistent Redis store is unavailable: %v", err)
+			}
 			log.Printf("GSM disabled: persistent Redis store is unavailable: %v", err)
 			return nil
 		}

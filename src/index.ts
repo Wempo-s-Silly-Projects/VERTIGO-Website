@@ -28,6 +28,13 @@ type VertexiaRuntimeEnv = Env & {
   GSM_PORT_MIN?: string;
   GSM_PORT_MAX?: string;
   REDIS_ADDR?: string;
+  REDIS_URL?: string;
+  REDIS_TLS?: string;
+  NETCODE_PRIVATE_KEY?: string;
+  NETCODE_PROTOCOL_ID?: string;
+  GSM_PUBLIC_IP?: string;
+  R2_ENDPOINT?: string;
+  R2_PUBLIC_BASE_URL?: string;
   REDIS_PASSWORD?: string;
   REDIS_DB?: string;
 };
@@ -108,12 +115,18 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
     if (!this.env.R2_ACCOUNT_ID || !this.env.R2_BUCKET_NAME) {
       throw new Error("R2_ACCOUNT_ID and R2_BUCKET_NAME must be configured");
     }
+    if (!this.env.REDIS_URL && !this.env.REDIS_ADDR) {
+      throw new Error("REDIS_URL or REDIS_ADDR must be configured for durable production sessions");
+    }
 
     const gsmConfigured = Boolean(
       this.env.GSM_AGENT_URL &&
       this.env.GSM_AGENT_TOKEN &&
       this.env.GSM_PUBLIC_HOST &&
-      this.env.REDIS_ADDR,
+      (this.env.REDIS_URL || this.env.REDIS_ADDR) &&
+      this.env.NETCODE_PRIVATE_KEY &&
+      this.env.NETCODE_PROTOCOL_ID &&
+      this.env.GAMESERVER_API_KEY,
     );
 
     if (!container.running) {
@@ -124,6 +137,8 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
         env: {
           PORT: String(APP_PORT),
           ADDR: `:${APP_PORT}`,
+          APP_ENV: "production",
+          PUBLIC_BASE_URL: "https://vertexia.wempos-forum.com",
           RUN_WITH_DATABASE: "true",
           DB_HOST: this.env.DB_HOST!,
           DB_PORT: this.env.DB_PORT || "3306",
@@ -140,7 +155,10 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           GSM_PUBLIC_HOST: this.env.GSM_PUBLIC_HOST || "",
           GSM_PORT_MIN: this.env.GSM_PORT_MIN || "5100",
           GSM_PORT_MAX: this.env.GSM_PORT_MAX || "5250",
+          REDIS_REQUIRED: "true",
+          REDIS_URL: this.env.REDIS_URL || "",
           REDIS_ADDR: this.env.REDIS_ADDR || "",
+          REDIS_TLS: this.env.REDIS_TLS || "false",
           REDIS_PASSWORD: this.env.REDIS_PASSWORD || "",
           REDIS_DB: this.env.REDIS_DB || "0",
           SESSION_SECURE: "true",
@@ -153,10 +171,18 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           REGISTRATION_IP_SALT:
             this.env.REGISTRATION_IP_SALT || this.env.ALTCHA_HMAC_KEY!,
           GAMESERVER_API_KEY: this.env.GAMESERVER_API_KEY || "",
+          NETCODE_PRIVATE_KEY: this.env.NETCODE_PRIVATE_KEY || "",
+          NETCODE_PROTOCOL_ID: this.env.NETCODE_PROTOCOL_ID || "",
+          GSM_PUBLIC_IP: this.env.GSM_PUBLIC_IP || "",
           TYPESAFE_API_KEY: this.env.TYPESAFE_API_KEY || "",
           FILTER_ENABLED: this.env.TYPESAFE_API_KEY ? "true" : "false",
           R2_ACCOUNT_ID: this.env.R2_ACCOUNT_ID,
+          R2_BUCKET: this.env.R2_BUCKET_NAME,
           R2_BUCKET_NAME: this.env.R2_BUCKET_NAME,
+          R2_ACCESS_KEY_ID: this.env.AWS_ACCESS_KEY_ID!,
+          R2_SECRET_ACCESS_KEY: this.env.AWS_SECRET_ACCESS_KEY!,
+          R2_PUBLIC_BASE_URL: this.env.R2_PUBLIC_BASE_URL || "",
+          R2_ENDPOINT: this.env.R2_ENDPOINT || "",
           AWS_ACCESS_KEY_ID: this.env.AWS_ACCESS_KEY_ID!,
           AWS_SECRET_ACCESS_KEY: this.env.AWS_SECRET_ACCESS_KEY!,
         },

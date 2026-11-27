@@ -15,6 +15,7 @@ import (
 	"vertexia-frontend/backend/config"
 	"vertexia-frontend/backend/database"
 	"vertexia-frontend/backend/handlers"
+	"vertexia-frontend/backend/kv"
 	"vertexia-frontend/backend/renderer"
 	"vertexia-frontend/backend/routes"
 	"vertexia-frontend/backend/service"
@@ -39,6 +40,21 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Config error! ########## %v", err)
+	}
+
+	kv.SetRequired(cfg.RedisRequired)
+	redisClient, redisErr := kv.Connect(kv.Options{
+		URL: cfg.RedisURL, Addr: cfg.RedisAddr, Password: cfg.RedisPassword,
+		DB: cfg.RedisDB, TLS: cfg.RedisTLS,
+	})
+	if redisErr != nil {
+		if cfg.RedisRequired {
+			log.Fatalf("Redis error! ########## %v", redisErr)
+		}
+		log.Printf("Redis unavailable; using process-local development storage: %v", redisErr)
+	} else {
+		kv.SetClient(redisClient)
+		defer redisClient.Close()
 	}
 
 	if err := database.Connect(cfg); err != nil {
@@ -95,6 +111,7 @@ func main() {
 		Max:          limiterMax,
 		Expiration:   limiterExpiration,
 		LimitReached: handlers.RateLimitReached,
+		Storage:      kv.NewStorage("vertexia:limiter:"),
 		Next: func(c fiber.Ctx) bool {
 			return strings.HasPrefix(c.Path(), "/ws/")
 		},
@@ -109,6 +126,7 @@ func main() {
 		CookieHTTPOnly: true,
 		CookieSecure:   cfg.SessionSecure,
 		CookieSameSite: cfg.SessionSameSite,
+		Storage:        kv.NewStorage("vertexia:session:"),
 	}
 	if cfg.SessionIdleTimeout > 0 {
 		sessionConfig.IdleTimeout = cfg.SessionIdleTimeout
@@ -119,6 +137,13 @@ func main() {
 	app.Use(session.New(sessionConfig))
 
 	app.Get("/health", func(c fiber.Ctx) error {
+		if cfg.RedisRequired {
+			ctx, cancel := kv.Ctx()
+			defer cancel()
+			if err := kv.Ping(ctx); err != nil {
+				return c.Status(fiber.StatusServiceUnavailable).SendString("Redis unavailable")
+			}
+		}
 		return c.SendStatus(fiber.StatusOK)
 	})
 
