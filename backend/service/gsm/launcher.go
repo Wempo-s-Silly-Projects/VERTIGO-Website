@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,21 @@ import (
 )
 
 const readyMarker = "Start trigger dispatched"
+
+// udpPortBound reports whether a UDP port is already occupied on loopback.
+// It is used by launcher readiness tests and port-allocation safeguards.
+func udpPortBound(port int) bool {
+	if port <= 0 || port > 65535 {
+		return false
+	}
+	conn, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return true
+	}
+	_ = conn.Close()
+	return false
+}
+
 
 // Launcher starts and supervises local gameserver processes.
 type Launcher interface {
