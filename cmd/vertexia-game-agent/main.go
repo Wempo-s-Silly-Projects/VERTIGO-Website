@@ -155,12 +155,12 @@ func (a *agent) launch(w http.ResponseWriter, r *http.Request) {
 		if existing.ID == input.ID { writeJSON(w, serverStatus{ID: existing.ID, GameID: existing.GameID, Port: existing.Port, PID: existing.PID, Running: true, Ready: a.ready(existing.ID)}); return }
 		http.Error(w, "port is already assigned to a running server", http.StatusConflict); return
 	}
-	if _, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(input.Port))); err != nil {
-		http.Error(w, "UDP port is already in use", http.StatusConflict); return
-	} else { _ = err; /* the socket is released below before the child binds */ }
-	// The probe above must be closed before the game process binds the port.
-	probe, _ := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(input.Port)))
-	if probe != nil { _ = probe.Close() }
+	probe, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(input.Port)))
+	if err != nil {
+		http.Error(w, "UDP port is already in use", http.StatusConflict)
+		return
+	}
+	_ = probe.Close()
 	logFile, err := os.OpenFile(a.logPath(input.ID), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil { http.Error(w, "could not open server log", http.StatusInternalServerError); return }
 	args := []string{"--port", strconv.Itoa(input.Port), "--map", a.cfg.mapPath, "--bind", a.cfg.bind, "--game-id", strconv.Itoa(input.GameID), "--server-id", input.ID}
