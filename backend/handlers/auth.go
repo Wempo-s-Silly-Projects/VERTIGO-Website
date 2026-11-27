@@ -278,7 +278,11 @@ func ValidateUkey(c fiber.Ctx) error {
 	var user *models.User
 	var err error
 	if hasAccessToken(c) {
-		user, _, err = bearerUser(c)
+		var token service.AccessToken
+		user, token, err = bearerUser(c)
+		if err == nil && token.Kind != service.TokenKindClient {
+			err = service.ErrInvalidToken
+		}
 	} else {
 		user, err = service.Auth.ValidateUkey(apiKey, legacyUnikey(c))
 	}
