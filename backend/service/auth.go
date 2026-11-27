@@ -362,6 +362,9 @@ func (s *AuthService) RevokeAllRememberTokens(userID int) error {
 }
 
 func (s *AuthService) ValidateGameserverKey(apiKey string) error {
+	if config.Global == nil {
+		return errors.New("unauthorized")
+	}
 	apiKey = strings.TrimSpace(strings.Trim(apiKey, "\""))
 	expectedKey := strings.TrimSpace(strings.Trim(config.Global.GameserverAPIKey, "\""))
 	if apiKey == "" || expectedKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(expectedKey)) != 1 {
