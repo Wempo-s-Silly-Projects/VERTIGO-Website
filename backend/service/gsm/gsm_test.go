@@ -258,14 +258,16 @@ func TestKillFreesPort(t *testing.T) {
 
 func TestLogReadyDetectsMarker(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/gs-test.log"
-	if logReady(path) {
+	launcher := NewProcessLauncherWithOptions(ProcessOptions{LogsDir: dir})
+	id := "test1234"
+	path := launcher.LogPath(id)
+	if launcher.logReadyFrom(id, 0) {
 		t.Fatal("missing log must not report ready")
 	}
 	if err := os.WriteFile(path, []byte("Booting\nStill starting\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if logReady(path) {
+	if launcher.logReadyFrom(id, 0) {
 		t.Fatal("log without marker must not report ready")
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
@@ -274,7 +276,7 @@ func TestLogReadyDetectsMarker(t *testing.T) {
 	}
 	_, _ = f.WriteString("Server entity spawned and Start trigger dispatched\n")
 	_ = f.Close()
-	if !logReady(path) {
+	if !launcher.logReadyFrom(id, 0) {
 		t.Fatal("log with marker must report ready")
 	}
 }
