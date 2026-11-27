@@ -413,7 +413,7 @@ func (a *Agent) supervise(st *serverState, pid int) {
 			a.failLocked(st, fmt.Sprintf("exited %d times within %s", len(st.rec.RestartTimes)+1, a.cfg.RestartWindow))
 			restarts := st.rec.Restarts
 			a.mu.Unlock()
-			log.Error("gameserver failed permanently; port released", "restarts", restarts, "log_tail", gsm.LogTail(a.launcher.LogPath(id)))
+			log.Error("gameserver failed permanently; port released", "restarts", restarts, "log_tail", a.launcher.LogTail(id))
 			return
 		}
 		st.rec.RestartTimes = append(st.rec.RestartTimes, now)
@@ -424,7 +424,7 @@ func (a *Agent) supervise(st *serverState, pid int) {
 		a.persist(st.rec)
 		rec := st.rec
 		a.mu.Unlock()
-		log.Warn("gameserver exited unexpectedly; restarting", "old_pid", pid, "attempt", attempt, "log_tail", gsm.LogTail(a.launcher.LogPath(id)))
+		log.Warn("gameserver exited unexpectedly; restarting", "old_pid", pid, "attempt", attempt, "log_tail", a.launcher.LogTail(id))
 
 		select {
 		case <-a.ctx.Done():
