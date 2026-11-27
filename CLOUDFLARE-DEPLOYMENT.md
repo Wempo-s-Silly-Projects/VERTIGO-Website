@@ -14,6 +14,8 @@ This deployment keeps the VERTEXIA application separate from Wempo's Forum. The 
 
 ## Required Cloudflare resources
 
+Cloudflare Containers are available only on the **Workers Paid** plan. The connected Cloudflare account currently lacks Container access, so deployment is blocked until that plan is enabled. The Workers Paid subscription is separate from the website's Free Website zone plan.
+
 1. An R2 bucket named `vertexia-assets` (or change `R2_BUCKET_NAME` in `wrangler.jsonc`).
 2. An R2 API token scoped to that bucket with Object Read and Write permissions.
 3. A MySQL database reachable from Cloudflare Containers. The database must allow connections from Cloudflare's container egress and use TLS where supported by the database provider.
