@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,6 +246,29 @@ func TestWebSocketOriginAllowed(t *testing.T) {
 		}
 		if res.StatusCode != want {
 			t.Errorf("origin %q: status = %d, want %d", origin, res.StatusCode, want)
+		}
+	}
+}
+func TestExchangeEndpointRejectsTokenKindEscalation(t *testing.T) {
+	app := fiber.New()
+	app.Post("/client", studioExchangeHandler("client"))
+	app.Post("/studio", studioExchangeHandler("studio"))
+
+	for _, tc := range []struct {
+		path string
+		body string
+	}{
+		{"/client", `{"code":"unused","client":"studio"}`},
+		{"/studio", `{"code":"unused","client":"client"}`},
+	} {
+		req := httptest.NewRequest("POST", tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != fiber.StatusBadRequest {
+			t.Errorf("%s accepted a mismatched token kind: status=%d", tc.path, res.StatusCode)
 		}
 	}
 }
