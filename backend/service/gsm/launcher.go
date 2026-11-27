@@ -198,13 +198,13 @@ func logTail(path string) string {
 	return strings.Join(kept, " | ")
 }
 
-func logReady(path string) bool {
-	return logReadyFrom(path, 0)
-}
-
-// logReadyFrom looks for the readiness marker after offset so a restart on
-// an appended log file is not fooled by the previous run's output.
-func logReadyFrom(path string, offset int64) bool {
+// logReadyFrom checks the log belonging to a validated server identifier.
+// It never accepts a caller-supplied filesystem path.
+func (l *ProcessLauncher) logReadyFrom(id string, offset int64) bool {
+	if !ValidID(id) || filepath.Base(id) != id {
+		return false
+	}
+	path := filepath.Join(l.opts.LogsDir, "gs-"+filepath.Base(id)+".log")
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -369,8 +369,7 @@ func (l *ProcessLauncher) running(pid int) bool {
 }
 
 func (l *ProcessLauncher) WaitHealthy(id string, port int, pid int, timeout time.Duration) error {
-	path := l.logPath(id)
-	if path == "" {
+	if !ValidID(id) || l.logPath(id) == "" {
 		return errors.New("invalid gameserver id")
 	}
 	var offset int64
@@ -380,23 +379,23 @@ func (l *ProcessLauncher) WaitHealthy(id string, port int, pid int, timeout time
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if !l.running(pid) {
-			if logReadyFrom(path, offset) {
-				return fmt.Errorf("gameserver exited right after startup: %s", logTail(path))
+			if l.logReadyFrom(id, offset) {
+				return fmt.Errorf("gameserver exited right after startup: %s", l.LogTail(id))
 			}
-			return fmt.Errorf("gameserver exited during startup: %s", logTail(path))
+			return fmt.Errorf("gameserver exited during startup: %s", l.LogTail(id))
 		}
-		if logReadyFrom(path, offset) {
+		if l.logReadyFrom(id, offset) {
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if logReadyFrom(path, offset) && l.running(pid) {
+	if l.logReadyFrom(id, offset) && l.running(pid) {
 		return nil
 	}
 	if !l.running(pid) {
-		return fmt.Errorf("gameserver exited during startup: %s", logTail(path))
+		return fmt.Errorf("gameserver exited during startup: %s", l.LogTail(id))
 	}
-	return fmt.Errorf("gameserver did not become healthy in time: %s", logTail(path))
+	return fmt.Errorf("gameserver did not become healthy in time: %s", l.LogTail(id))
 }
 
 func (l *ProcessLauncher) Alive(pid int, port int) bool {
