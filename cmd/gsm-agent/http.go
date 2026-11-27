@@ -54,7 +54,7 @@ func (a *Agent) accessLog(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		a.log.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "remote", r.RemoteAddr, "duration_ms", time.Since(start).Milliseconds())
+		a.log.Info("request", "method", r.Method, "status", rec.status, "remote", r.RemoteAddr, "duration_ms", time.Since(start).Milliseconds())
 	})
 }
 
@@ -62,7 +62,7 @@ func recoverer(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if v := recover(); v != nil {
-				log.Error("handler panic", "path", r.URL.Path, "panic", v)
+				log.Error("handler panic")
 				writeError(w, http.StatusInternalServerError, "internal error")
 			}
 		}()
