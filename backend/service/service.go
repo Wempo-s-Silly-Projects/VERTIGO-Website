@@ -2,9 +2,7 @@ package service
 
 import (
 	"database/sql"
-	"errors"
 	"log"
-	"strings"
 	"time"
 
 	"vertexia-frontend/backend/config"
@@ -30,6 +28,7 @@ var (
 	Asset      *AssetService
 	Banner     *BannerService
 	StudioAuth *StudioAuthService
+	Tokens     *TokenService
 	GSM        *gsm.Manager
 	Filter     *filtersvc.Service
 )
@@ -63,6 +62,11 @@ func Init(db *sql.DB) {
 	Asset = NewAssetService(assetRepo)
 	Banner = NewBannerService(bannerRepo, Cooldown)
 	StudioAuth = NewStudioAuthService(userRepo)
+	if cfg := config.Global; cfg != nil {
+		Tokens = NewTokenService(cfg.ClientTokenTTL, cfg.StudioTokenTTL)
+	} else {
+		Tokens = NewTokenService(0, 0)
+	}
 	GSM = initGSMService()
 	initFilterService(db)
 }
@@ -90,81 +94,4 @@ func initFilterService(db *sql.DB) {
 	}
 	Filter = filterService
 	log.Printf("Filter API (Jev model %s) started on loopback only", cfg.TypeSafeModel)
-}
-
-func initGSMService() *gsm.Manager {
-	cfg := config.Global
-	if cfg == nil || !cfg.GSMEnabled {
-		return nil
-	}
-	gsmCfg := gsm.Config{
-		BindHost:          cfg.GSMBindHost,
-		PublicHost:        cfg.GSMPublicHost,
-		PortMin:           cfg.GSMPortMin,
-		PortMax:           cfg.GSMPortMax,
-		MaxPlayersDefault: cfg.GSMMaxPlayersDefault,
-		MinPlayersDefault: cfg.GSMMinPlayersDefault,
-		IdleTimeout:       cfg.GSMIdleTimeout,
-		ReapInterval:      cfg.GSMReapInterval,
-		ShutdownGrace:     cfg.GSMShutdownGrace,
-		ServerBin:         cfg.GSMServerBin,
-		ServerWorkdir:     cfg.GSMServerWorkdir,
-		ServerMap:         cfg.GSMServerMap,
-		LogsDir:           cfg.GSMServerLogsDir,
-	}
-	var store gsm.Store
-	var launcher gsm.Launcher
-	if cfg.GSMAgentURL != "" {
-		var err error
-		redisAddr := cfg.RedisAddr
-		if cfg.RedisURL != "" {
-			redisAddr = cfg.RedisURL
-		} else if cfg.RedisTLS && !strings.HasPrefix(redisAddr, "rediss://") && !strings.HasPrefix(redisAddr, "redis://") {
-			redisAddr = "rediss://" + redisAddr
-		}
-		store, err = gsm.NewRedisStore(redisAddr, cfg.RedisPassword, cfg.RedisDB)
-		if err != nil {
-			if cfg.IsProduction() {
-				log.Fatalf("GSM persistent Redis store is unavailable: %v", err)
-			}
-			log.Printf("GSM disabled: persistent Redis store is unavailable: %v", err)
-			return nil
-		}
-		launcher, err = gsm.NewHTTPLauncher(cfg.GSMAgentURL, cfg.GSMAgentToken)
-		if err != nil {
-			_ = store.Close()
-			if cfg.IsProduction() {
-				log.Fatalf("GSM remote agent configuration is invalid: %v", err)
-			}
-			log.Printf("GSM disabled: remote game-server agent is not configured: %v", err)
-			return nil
-		}
-		log.Printf("GSM using remote game-server agent at %s", cfg.GSMAgentURL)
-	} else {
-		store = gsm.NewStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
-		launcher = gsm.NewProcessLauncher(gsmCfg.BindHost, gsmCfg.ServerBin, gsmCfg.ServerWorkdir, gsmCfg.ServerMap, gsmCfg.LogsDir, cfg.GameserverAPIKey)
-	}
-	manager := gsm.NewManager(gsmCfg, store, launcher, func(gameID int) (gsm.GameInfo, error) {
-		if Game == nil {
-			return gsm.GameInfo{}, errors.New("game service unavailable")
-		}
-		game, err := Game.GetGameByID(gameID)
-		if err != nil || game == nil {
-			return gsm.GameInfo{}, errors.New("game not found")
-		}
-		owner := ""
-		if game.CreatorID.Valid {
-			owner = game.CreatorName
-		}
-		return gsm.GameInfo{
-			ID:         game.ID,
-			MaxPlayers: game.MaxPlayers,
-			Private:    game.Private,
-			Locked:     game.Locked,
-			Owner:      owner,
-		}, nil
-	})
-	log.Printf("GSM enabled: ports %d-%d public=%s", gsmCfg.PortMin, gsmCfg.PortMax, gsmCfg.PublicHost)
-	manager.Start()
-	return manager
 }

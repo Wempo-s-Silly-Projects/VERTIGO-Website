@@ -2,10 +2,8 @@ package gsm
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -63,56 +61,15 @@ type redisStore struct {
 	client *redis.Client
 }
 
-func newRedisStore(addr, password string, db int) (*redisStore, error) {
-	options := &redis.Options{
-		Addr:         addr,
-		Password:     password,
-		DB:           db,
-		DialTimeout:  3 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
+// NewRedisStore persists gameserver records in Redis using the shared
+// process-wide client (kv.Client()). Records, rosters and the per-game lock
+// are visible to every platform instance. Close does not close the shared
+// client; its owner does.
+func NewRedisStore(c *redis.Client) Store {
+	if c == nil {
+		return nil
 	}
-	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
-		parsed, err := redis.ParseURL(addr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid REDIS_ADDR URL: %w", err)
-		}
-		if password != "" {
-			parsed.Password = password
-		}
-		parsed.DialTimeout = options.DialTimeout
-		parsed.ReadTimeout = options.ReadTimeout
-		parsed.WriteTimeout = options.WriteTimeout
-		if db != 0 {
-			parsed.DB = db
-		}
-		options = parsed
-	}
-	if strings.HasPrefix(addr, "rediss://") {
-		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
-	client := redis.NewClient(options)
-	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
-	defer cancel()
-	if err := client.Ping(ctx).Err(); err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	return &redisStore{client: client}, nil
-}
-
-func NewRedisStore(addr, password string, db int) (Store, error) {
-	if strings.TrimSpace(addr) == "" {
-		return nil, fmt.Errorf("REDIS_ADDR is required for a persistent game-server manager")
-	}
-	return newRedisStore(addr, password, db)
-}
-
-func NewStore(addr, password string, db int) Store {
-	if rs, err := newRedisStore(addr, password, db); err == nil {
-		return rs
-	}
-	return NewMemoryStore()
+	return &redisStore{client: c}
 }
 
 func NewMemoryStore() Store {
@@ -132,7 +89,7 @@ func (s *redisStore) Ping() error {
 }
 
 func (s *redisStore) Close() error {
-	return s.client.Close()
+	return nil
 }
 
 func (s *redisStore) Exists(id string) (bool, error) {
@@ -153,7 +110,9 @@ func (s *redisStore) Save(gs GameServer) error {
 	pipe.Set(ctx, gsKey(gs.ID), raw, 0)
 	pipe.SAdd(ctx, keyAll, gs.ID)
 	pipe.SAdd(ctx, gameKey(gs.GameID), gs.ID)
-	pipe.SAdd(ctx, keyPorts, gs.Port)
+	if gs.Port > 0 {
+		pipe.SAdd(ctx, keyPorts, gs.Port)
+	}
 	_, err = pipe.Exec(ctx)
 	return err
 }
@@ -443,7 +402,9 @@ func (s *memoryStore) Save(gs GameServer) error {
 		s.byGame[gs.GameID] = make(map[string]struct{})
 	}
 	s.byGame[gs.GameID][gs.ID] = struct{}{}
-	s.ports[gs.Port] = struct{}{}
+	if gs.Port > 0 {
+		s.ports[gs.Port] = struct{}{}
+	}
 	return nil
 }
 

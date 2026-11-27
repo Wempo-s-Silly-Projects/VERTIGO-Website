@@ -62,8 +62,6 @@ type Config struct {
 	GSMReapInterval        time.Duration
 	GSMShutdownGrace       time.Duration
 	GSMServerLogsDir       string
-	GSMAgentURL            string
-	GSMAgentToken          string
 	FilterEnabled          bool
 	TypeSafeAPIKey         string
 	TypeSafeBaseURL        string
@@ -75,10 +73,19 @@ type Config struct {
 	RedisURL          string
 	RedisTLS          bool
 	RedisRequired     bool
-	DBTLS             bool
+	DBTLS             string
+	DBTLSCAPEM        string
+	DBTLSServerName   string
+	DBTimeout         time.Duration
+	GSMAgentURL       string
+	GSMAgentSecret    string
+	GSMAgentTimeout   time.Duration
 	NetcodePrivateKey []byte
 	NetcodeProtocolID uint64
 	NetcodeTokenTTL   time.Duration
+	ClientTokenTTL    time.Duration
+	StudioTokenTTL    time.Duration
+
 	GSMHeartbeatTimeout time.Duration
 	GSMMaxServers       int
 	GSMReadyTimeout     time.Duration
@@ -94,78 +101,60 @@ type Config struct {
 	UploadMaxBytes    int64
 }
 
-func (c *Config) IsProduction() bool {
-	return c != nil && strings.EqualFold(c.AppEnv, "production")
-}
-
-func (c *Config) GSMRemote() bool {
-	return c != nil && strings.TrimSpace(c.GSMAgentURL) != ""
-}
-
+// R2Enabled reports whether runtime-written files go to Cloudflare R2.
 func (c *Config) R2Enabled() bool {
-	return c != nil && strings.TrimSpace(c.R2Bucket) != ""
+	return c != nil && c.R2Bucket != ""
 }
 
-func isLoopbackHost(host string) bool {
-	host = strings.TrimSpace(host)
-	if host == "" || strings.EqualFold(host, "localhost") {
-		return true
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
+// IsProduction reports whether APP_ENV=production. Production enables the
+// strict validation in Validate.
+func (c *Config) IsProduction() bool {
+	return c != nil && c.AppEnv == "production"
 }
 
+// GSMRemote reports whether gameservers are managed by a remote agent instead
+// of being spawned as local child processes.
+func (c *Config) GSMRemote() bool {
+	return c != nil && c.GSMAgentURL != ""
+}
+
+// Validate rejects configurations that would run insecurely or silently lose
+// state. Development configurations only fail on outright contradictions.
 func (c *Config) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
-
-	if c.GSMEnabled && c.GSMRemote() {
+	if c.GSMRemote() {
 		u, err := url.Parse(c.GSMAgentURL)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 			add("GSM_AGENT_URL must be an absolute http(s) URL")
 		} else if c.IsProduction() && u.Scheme != "https" {
 			add("GSM_AGENT_URL must use https in production")
 		}
-		if len(c.GSMAgentToken) < 32 {
-			add("GSM_AGENT_TOKEN must be at least 32 characters when GSM_AGENT_URL is set")
+		if len(c.GSMAgentSecret) < 32 {
+			add("GSM_AGENT_SECRET must be at least 32 characters when GSM_AGENT_URL is set")
+		}
+	}
+	if c.GSMEnabled && c.GSMRemote() && c.GSMPublicHost == "" {
+		add("GSM_PUBLIC_HOST must name the public UDP gameserver host (for example games.vertexia.wempos-forum.com)")
+	}
+	if c.GSMEnabled && c.PublicBaseURL != "" && c.GSMPublicHost != "" {
+		if u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), c.GSMPublicHost) {
+			add("GSM_PUBLIC_HOST must not be the platform web hostname: Cloudflare does not carry raw UDP to Workers")
 		}
 	}
 	if len(c.NetcodePrivateKey) != 0 && len(c.NetcodePrivateKey) != 32 {
 		add("NETCODE_PRIVATE_KEY must be 64 hex characters")
 	}
-	if c.GSMEnabled {
-		if c.GSMRemote() && c.GSMPublicHost == "" {
-			add("GSM_PUBLIC_HOST must name the public UDP gameserver hostname")
+	switch c.DBTLS {
+	case "", "false", "true", "preferred":
+	case "skip-verify":
+		if c.IsProduction() {
+			add("DB_TLS=skip-verify disables certificate verification and is not allowed in production")
 		}
-		if c.IsProduction() && !c.GSMRemote() {
-			add("GSM_AGENT_URL is required in production; Cloudflare Containers cannot host UDP gameservers")
-		}
-		if len(c.NetcodePrivateKey) != 32 {
-			add("NETCODE_PRIVATE_KEY is required when GSM_ENABLED=true")
-		}
-		if c.NetcodeProtocolID == 0 {
-			add("NETCODE_PROTOCOL_ID must be a non-zero unsigned integer when GSM_ENABLED=true")
-		}
-		if len(strings.TrimSpace(c.GameserverAPIKey)) < 32 {
-			add("GAMESERVER_API_KEY must be a random secret of at least 32 characters when GSM_ENABLED=true")
-		}
-		if c.PublicBaseURL != "" && c.GSMPublicHost != "" {
-			gameHost := strings.TrimSpace(c.GSMPublicHost)
-			if h, _, err := net.SplitHostPort(gameHost); err == nil {
-				gameHost = h
-			}
-			if u, err := url.Parse(c.PublicBaseURL); err == nil && strings.EqualFold(u.Hostname(), gameHost) {
-				add("GSM_PUBLIC_HOST must not be the platform web hostname; Cloudflare Workers do not carry raw UDP")
-			}
-		}
+	default:
+		add("DB_TLS must be one of true, false, preferred, skip-verify")
 	}
 	if c.IsProduction() {
-		if !c.RunWithDatabase || c.DBHost == "" || c.DBUser == "" || c.DBPass == "" || c.DBName == "" {
-			add("RUN_WITH_DATABASE and DB_HOST, DB_USER, DB_PASS, DB_NAME are required in production")
-		}
 		if len(c.AltchaHMACKey) < 32 || strings.HasPrefix(c.AltchaHMACKey, "Please-Put") {
 			add("ALTCHA_HMAC_KEY must be a random secret of at least 32 characters")
 		}
@@ -176,53 +165,89 @@ func (c *Config) Validate() error {
 			add("SESSION_SECURE must be true in production")
 		}
 		if !c.RedisRequired {
-			add("REDIS_REQUIRED must be true in production")
+			add("REDIS_REQUIRED must not be disabled in production")
 		}
-		if c.RedisURL == "" && c.RedisAddr == "" {
-			add("REDIS_URL or REDIS_ADDR is required in production")
-		}
-		if c.RunWithDatabase && !c.DBTLS && !isLoopbackHost(c.DBHost) {
+		if c.RunWithDatabase && c.DBTLS != "true" && !isLoopbackHost(c.DBHost) {
 			add("DB_TLS must be true for a non-local MySQL host in production")
 		}
-		if !c.R2Enabled() {
-			add("R2_BUCKET is required in production because the container filesystem is ephemeral")
-		}
-		if c.PublicBaseURL == "" {
-			add("PUBLIC_BASE_URL is required in production")
-		}
-	}
-	if c.R2Enabled() {
-		if c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2AccountID == "" && c.R2Endpoint == "") {
-			add("R2_BUCKET requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT)")
-		}
-	}
-	if c.IsProduction() && c.PublicBaseURL != "" {
-		u, err := url.Parse(c.PublicBaseURL)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			add("PUBLIC_BASE_URL must be an absolute https URL in production")
+		if c.GSMEnabled {
+			if !c.GSMRemote() {
+				add("GSM_AGENT_URL is required in production: the platform container cannot host UDP gameservers")
+			}
+			if len(c.NetcodePrivateKey) != 32 {
+				add("NETCODE_PRIVATE_KEY is required in production so clients never need the server key")
+			}
+			if len(strings.TrimSpace(c.GameserverAPIKey)) < 32 || strings.HasPrefix(c.GameserverAPIKey, "Please-Put") {
+				add("GAMESERVER_API_KEY must be a random secret of at least 32 characters")
+			}
 		}
 	}
-	if c.RedisURL != "" {
-		u, err := url.Parse(c.RedisURL)
-		if err != nil || u.Host == "" || (u.Scheme != "redis" && u.Scheme != "rediss") {
-			add("REDIS_URL must use redis:// or rediss://")
-		}
-	}
-	if c.R2Endpoint != "" {
-		u, err := url.Parse(c.R2Endpoint)
-		if err != nil || u.Scheme != "https" || u.Host == "" {
-			add("R2_ENDPOINT must be an absolute https URL")
-		}
+	if c.R2Bucket != "" && (c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2AccountID == "" && c.R2Endpoint == "")) {
+		add("R2_BUCKET requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT)")
 	}
 	if c.R2PublicBaseURL != "" {
 		if u, err := url.Parse(c.R2PublicBaseURL); err != nil || u.Scheme != "https" || u.Host == "" {
 			add("R2_PUBLIC_BASE_URL must be an absolute https URL")
 		}
 	}
+	if c.IsProduction() && !c.R2Enabled() {
+		add("R2_BUCKET is required in production: the container filesystem is ephemeral")
+	}
 	if len(problems) > 0 {
 		return errors.New("invalid configuration:\n  - " + strings.Join(problems, "\n  - "))
 	}
 	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key))); err == nil && d > 0 {
+		return d
+	}
+	return def
+}
+
+// ParsePortRange parses "min-max" (inclusive) with 1024 <= min <= max <= 65535.
+func ParsePortRange(raw string) (int, int, bool) {
+	lo, hi, found := strings.Cut(strings.TrimSpace(raw), "-")
+	if !found {
+		return 0, 0, false
+	}
+	a, err1 := strconv.Atoi(strings.TrimSpace(lo))
+	b, err2 := strconv.Atoi(strings.TrimSpace(hi))
+	if err1 != nil || err2 != nil || a < 1024 || b > 65535 || a > b {
+		return 0, 0, false
+	}
+	return a, b, true
+}
+
+func envInt(key string, def int) int {
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key))); err == nil && v > 0 {
+		return v
+	}
+	return def
+}
+
+func envString(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func envBool(key string, def bool) bool {
+	if v, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key))); err == nil {
+		return v
+	}
+	return def
 }
 
 var Global *Config
@@ -321,7 +346,6 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	runWithDB, _ := strconv.ParseBool(os.Getenv("RUN_WITH_DATABASE"))
-	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
 
 	dbMaxOpenConns, _ := strconv.Atoi(os.Getenv("DB_MAX_OPEN_CONNS"))
 	dbMaxIdleConns, _ := strconv.Atoi(os.Getenv("DB_MAX_IDLE_CONNS"))
@@ -342,7 +366,12 @@ func Load() (*Config, error) {
 	limiterMax, _ := strconv.Atoi(os.Getenv("LIMITER_MAX"))
 	limiterExpiration, _ := time.ParseDuration(os.Getenv("LIMITER_EXPIRATION"))
 	sessionSecure, _ := strconv.ParseBool(os.Getenv("SESSION_SECURE"))
-	sessionSameSite := os.Getenv("SESSION_SAMESITE")
+	sessionSameSite := strings.TrimSpace(os.Getenv("SESSION_SAMESITE"))
+	if sessionSameSite == "" {
+		// An empty SameSite lets Firefox and Safari send the remember-me
+		// cookie on cross-site requests.
+		sessionSameSite = "Lax"
+	}
 	sessionIdleTimeout, _ := time.ParseDuration(os.Getenv("SESSION_IDLE_TIMEOUT"))
 	sessionAbsoluteTimeout, _ := time.ParseDuration(os.Getenv("SESSION_ABSOLUTE_TIMEOUT"))
 	altchaHMACKey := os.Getenv("ALTCHA_HMAC_KEY")
@@ -357,18 +386,11 @@ func Load() (*Config, error) {
 	}
 	trustedProxies := splitCommaSeparated(os.Getenv("TRUSTED_PROXIES"))
 	redisAddr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
-	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
-	if redisAddr == "" && redisURL == "" && appEnv != "production" {
+	if redisAddr == "" {
 		redisAddr = "127.0.0.1:6379"
 	}
-	redisTLS, _ := strconv.ParseBool(os.Getenv("REDIS_TLS"))
-	redisRequired, _ := strconv.ParseBool(os.Getenv("REDIS_REQUIRED"))
-	if strings.TrimSpace(os.Getenv("REDIS_REQUIRED")) == "" {
-		redisRequired = appEnv == "production"
-	}
-	dbTLS, _ := strconv.ParseBool(os.Getenv("DB_TLS"))
 	redisDB, _ := strconv.Atoi(os.Getenv("REDIS_DB"))
-	gsmEnabled := false
+	gsmEnabled := true
 	if raw := strings.TrimSpace(os.Getenv("GSM_ENABLED")); raw != "" {
 		if parsed, err := strconv.ParseBool(raw); err == nil {
 			gsmEnabled = parsed
@@ -381,6 +403,9 @@ func Load() (*Config, error) {
 	gsmPortMax, _ := strconv.Atoi(os.Getenv("GSM_PORT_MAX"))
 	if gsmPortMax <= 0 {
 		gsmPortMax = 5250
+	}
+	if lo, hi, ok := ParsePortRange(os.Getenv("GSM_PORT_RANGE")); ok {
+		gsmPortMin, gsmPortMax = lo, hi
 	}
 	if gsmPortMax < gsmPortMin {
 		gsmPortMax = gsmPortMin
@@ -406,13 +431,7 @@ func Load() (*Config, error) {
 		gsmShutdownGrace = 10 * time.Second
 	}
 	gsmServerBin := strings.TrimSpace(os.Getenv("GSM_SERVER_BIN"))
-	if gsmServerBin == "" {
-		gsmServerBin = `C:\Users\xampp\Documents\VERTIGO-Full\A	arget\debug\RaveEngineServer.exe`
-	}
 	gsmServerWorkdir := strings.TrimSpace(os.Getenv("GSM_SERVER_WORKDIR"))
-	if gsmServerWorkdir == "" {
-		gsmServerWorkdir = `C:\Users\xampp\Documents\VERTIGO-Full\A	arget\debug`
-	}
 	gsmServerMap := strings.TrimSpace(os.Getenv("GSM_SERVER_MAP"))
 	if gsmServerMap == "" {
 		gsmServerMap = "assets/maps/default.vrtx"
@@ -421,8 +440,12 @@ func Load() (*Config, error) {
 	if gsmBindHost == "" {
 		gsmBindHost = "127.0.0.1"
 	}
+	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
 	gsmAgentURL := strings.TrimSuffix(strings.TrimSpace(os.Getenv("GSM_AGENT_URL")), "/")
 	gsmPublicHost := strings.TrimSpace(os.Getenv("GSM_PUBLIC_HOST"))
+	// Auto-detecting the host only makes sense when gameservers run on this
+	// machine. A remote agent or a production container must be told the
+	// public UDP hostname explicitly.
 	if gsmPublicHost == "" && gsmAgentURL == "" && appEnv != "production" {
 		if detected := detectServerHost(); detected != "" {
 			gsmPublicHost = detected
@@ -456,6 +479,7 @@ func Load() (*Config, error) {
 	if filterTimeout <= 0 {
 		filterTimeout = 20 * time.Second
 	}
+
 	var netcodeKey []byte
 	if raw := strings.TrimSpace(os.Getenv("NETCODE_PRIVATE_KEY")); raw != "" {
 		decoded, err := hex.DecodeString(raw)
@@ -476,36 +500,6 @@ func Load() (*Config, error) {
 	if publicBaseURL == "" {
 		publicBaseURL = "https://vertexia.wempos-forum.com"
 	}
-	r2Bucket := strings.TrimSpace(os.Getenv("R2_BUCKET"))
-	if r2Bucket == "" {
-		r2Bucket = strings.TrimSpace(os.Getenv("R2_BUCKET_NAME"))
-	}
-	r2AccessKeyID := strings.TrimSpace(os.Getenv("R2_ACCESS_KEY_ID"))
-	if r2AccessKeyID == "" {
-		r2AccessKeyID = strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
-	}
-	r2SecretAccessKey := strings.TrimSpace(os.Getenv("R2_SECRET_ACCESS_KEY"))
-	if r2SecretAccessKey == "" {
-		r2SecretAccessKey = strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	}
-	uploadMaxBytes, _ := strconv.ParseInt(os.Getenv("UPLOAD_MAX_BYTES"), 10, 64)
-	if uploadMaxBytes <= 0 {
-		uploadMaxBytes = 40 << 20
-	}
-	gsmHeartbeatTimeout, _ := time.ParseDuration(os.Getenv("GSM_HEARTBEAT_TIMEOUT"))
-	if gsmHeartbeatTimeout <= 0 {
-		gsmHeartbeatTimeout = 90 * time.Second
-	}
-	gsmMaxServers, _ := strconv.Atoi(os.Getenv("GSM_MAX_SERVERS"))
-	gsmReadyTimeout, _ := time.ParseDuration(os.Getenv("GSM_READY_TIMEOUT"))
-	if gsmReadyTimeout <= 0 {
-		gsmReadyTimeout = 30 * time.Second
-	}
-	netcodeTokenTTL, _ := time.ParseDuration(os.Getenv("NETCODE_TOKEN_TTL"))
-	if netcodeTokenTTL <= 0 {
-		netcodeTokenTTL = 30 * time.Second
-	}
-
 
 	liveTimerEnabled, _ := strconv.ParseBool(os.Getenv("LIVETIMER_ENABLED"))
 	liveTimerDuration := parseLiveTimerDuration(os.Getenv("LIVETIMER_DURATION"))
@@ -565,8 +559,6 @@ func Load() (*Config, error) {
 		GSMReapInterval:        gsmReapInterval,
 		GSMShutdownGrace:       gsmShutdownGrace,
 		GSMServerLogsDir:       gsmLogsDir,
-		GSMAgentURL:            gsmAgentURL,
-		GSMAgentToken:          strings.TrimSpace(os.Getenv("GSM_AGENT_TOKEN")),
 		FilterEnabled:          filterEnabled,
 		TypeSafeAPIKey:         strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY")),
 		TypeSafeBaseURL:        typeSafeBaseURL,
@@ -575,30 +567,38 @@ func Load() (*Config, error) {
 
 		AppEnv:            appEnv,
 		PublicBaseURL:     publicBaseURL,
-		RedisURL:          redisURL,
-		RedisTLS:          redisTLS,
-		RedisRequired:     redisRequired,
-		DBTLS:             dbTLS,
+		RedisURL:          strings.TrimSpace(os.Getenv("REDIS_URL")),
+		RedisTLS:          envBool("REDIS_TLS", false),
+		RedisRequired:     envBool("REDIS_REQUIRED", appEnv == "production"),
+		DBTLS:             strings.ToLower(strings.TrimSpace(os.Getenv("DB_TLS"))),
+		DBTLSCAPEM:        strings.TrimSpace(os.Getenv("DB_TLS_CA_PEM")),
+		DBTLSServerName:   strings.TrimSpace(os.Getenv("DB_TLS_SERVER_NAME")),
+		DBTimeout:         envDuration("DB_TIMEOUT", 10*time.Second),
+		GSMAgentURL:       gsmAgentURL,
+		GSMAgentSecret:    strings.TrimSpace(os.Getenv("GSM_AGENT_SECRET")),
+		GSMAgentTimeout:   envDuration("GSM_AGENT_TIMEOUT", 10*time.Second),
 		NetcodePrivateKey: netcodeKey,
 		NetcodeProtocolID: netcodeProtocolID,
-		NetcodeTokenTTL:   netcodeTokenTTL,
-		GSMHeartbeatTimeout: gsmHeartbeatTimeout,
-		GSMMaxServers:       gsmMaxServers,
-		GSMReadyTimeout:     gsmReadyTimeout,
+		NetcodeTokenTTL:   envDuration("NETCODE_TOKEN_TTL", 60*time.Second),
+		ClientTokenTTL:    envDuration("CLIENT_TOKEN_TTL", 24*time.Hour),
+		StudioTokenTTL:    envDuration("STUDIO_TOKEN_TTL", 7*24*time.Hour),
+
+		GSMHeartbeatTimeout: envDuration("GSM_HEARTBEAT_TIMEOUT", 90*time.Second),
+		GSMMaxServers:       envInt("GSM_MAX_SERVERS", 0),
+		GSMReadyTimeout:     envDuration("GSM_READY_TIMEOUT", 30*time.Second),
 		GSMPublicIP:         strings.TrimSpace(os.Getenv("GSM_PUBLIC_IP")),
+
 		R2AccountID:       strings.TrimSpace(os.Getenv("R2_ACCOUNT_ID")),
-		R2Bucket:          r2Bucket,
-		R2AccessKeyID:     r2AccessKeyID,
-		R2SecretAccessKey: r2SecretAccessKey,
+		R2Bucket:          strings.TrimSpace(os.Getenv("R2_BUCKET")),
+		R2AccessKeyID:     strings.TrimSpace(os.Getenv("R2_ACCESS_KEY_ID")),
+		R2SecretAccessKey: strings.TrimSpace(os.Getenv("R2_SECRET_ACCESS_KEY")),
 		R2PublicBaseURL:   strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_PUBLIC_BASE_URL")), "/"),
 		R2Endpoint:        strings.TrimSuffix(strings.TrimSpace(os.Getenv("R2_ENDPOINT")), "/"),
-		StorageDir:        strings.TrimSpace(os.Getenv("STORAGE_DIR")),
-		UploadMaxBytes:    uploadMaxBytes,
+		StorageDir:        envString("STORAGE_DIR", "."),
+		UploadMaxBytes:    int64(envInt("UPLOAD_MAX_BYTES", 40<<20)),
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
 	Global = cfg
+
 	return cfg, nil
 }
