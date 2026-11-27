@@ -116,3 +116,12 @@ No production deployment is implied by this document. Configure the database, Re
 - R2 object storage is not a local filesystem. Application paths must use the storage abstraction and object semantics.
 - Game-server UDP traffic remains outside the Worker and web Container.
 - Do not enable production GSM until the remote agent, Redis coordination, server binary, UDP firewall, and client join flow have all been verified.
+## Container privilege model
+
+Cloudflare's Durable Object scheduling policy does not make the Dockerfile's
+non-root `USER` directive a security boundary: Cloudflare documents that
+processes in deployed Containers using this policy retain root-equivalent
+Linux capabilities. The configured UID remains useful for file ownership and
+runtime consistency, but treat application code and dependencies as privileged.
+Keep the image minimal, scope secrets to the application, and do not expose
+arbitrary process execution to untrusted callers.
