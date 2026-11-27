@@ -14,13 +14,13 @@ Nothing here has been applied to a real account. Every step below is manual.
 | MySQL | 8.x reachable from the internet over TLS with a CA you can pin |
 | Redis | 7.x over TLS (`rediss://`), AOF persistence (`appendonly yes`, `appendfsync everysec`), password auth, reachable from Cloudflare and the gameserver host |
 | Gameserver host | Linux x86_64 with a public IPv4 (IPv6 optional), systemd, the `RaveEngineServer` binary and maps |
-| Build machine | Docker (linux/amd64), Node 24 with pnpm 12.21.0 (`corepack enable`), Go 1.25 for the agent |
+| Build machine | Docker (linux/amd64), Node 22+ with pnpm 12.23.0 (`corepack enable`), Go 1.25 for the agent |
 
 ## 2. DNS
 
 | Name | Type | Proxy | Points to |
 | --- | --- | --- | --- |
-| `vertexia.wempos-forum.com` | Worker custom domain | proxied (orange) | the `vertexia-platform` Worker |
+| `vertexia.wempos-forum.com` | Worker custom domain | proxied (orange) | the `vertexia` Worker |
 | `games.vertexia.wempos-forum.com` | A (and AAAA if used) | **DNS only (grey)** | gameserver host public IP |
 
 The game hostname must be grey-cloud: Cloudflare's proxy does not carry raw
@@ -30,7 +30,7 @@ the DNS lookup. The platform refuses to start in production when
 `GSM_PUBLIC_HOST` equals the web hostname.
 
 Add the custom domain under the Worker's Settings, Domains & Routes, or add a
-`routes` entry with `custom_domain: true` to `cloudflare/wrangler.jsonc`.
+`routes` entry with `custom_domain: true` to `wrangler.jsonc`.
 
 ## 3. Data services
 
@@ -47,7 +47,7 @@ for development only. Pool defaults: 25 open, 10 idle, 30 minute lifetime,
 records and nonces) and the pub/sub channel `feed:events`. With
 `APP_ENV=production` the app refuses to start without Redis.
 
-**R2.** Create a bucket (for example `vertexia-uploads`) and an R2 API token
+**R2.** Create a bucket (for example `vertexia-assets`) and an R2 API token
 with Object Read & Write on that bucket only. Leave `R2_PUBLIC_BASE_URL`
 unset unless you also add a rule that only serves the public prefixes
 (`static/uploads/`, `static/renders/outfits/`, `static/renders/shop/`,
@@ -92,9 +92,8 @@ Stopping or restarting the agent leaves running gameservers alone
 
 ## 5. Platform configuration
 
-Non-secret values live in `cloudflare/wrangler.jsonc` `vars`. Secrets are set
-with `pnpm exec wrangler secret put NAME` from `cloudflare/`. The Worker only
-forwards variables listed in `APP_VARS` in `cloudflare/src/index.ts`.
+Non-secret values live in `wrangler.jsonc` `vars`. Secrets are set
+with `pnpm exec wrangler secret put NAME` from the repository root. The Worker explicitly forwards the runtime variables defined in `src/index.ts`.
 
 | Variable | Secret | Default | Notes |
 | --- | --- | --- | --- |
@@ -118,7 +117,7 @@ forwards variables listed in `APP_VARS` in `cloudflare/src/index.ts`.
 | `ALTCHA_HMAC_KEY` | yes | | captcha key |
 | `REGISTRATION_IP_SALT` | yes | `ALTCHA_HMAC_KEY` | |
 | `GAMESERVER_API_KEY` | yes | | shared with the agent and gameservers |
-| `GSM_ENABLED` | | `true` | |
+| `GSM_ENABLED` | | computed | Worker enables GSM only when remote agent, host, Redis, Netcode, and API-key settings are present |
 | `GSM_AGENT_URL` | yes | | for example `https://gsm.vertexia.wempos-forum.com`; required in production |
 | `GSM_AGENT_SECRET` | yes | | at least 32 characters; same as the agent |
 | `GSM_AGENT_TIMEOUT` | | `10s` | |
@@ -143,7 +142,6 @@ forwards variables listed in `APP_VARS` in `cloudflare/src/index.ts`.
 | `FILTER_ENABLED`, `TYPESAFE_API_KEY` (secret), `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL`, `FILTER_TIMEOUT` | | | text filter |
 | `SITELOCK_ENABLED`, `SITELOCK_PASSWORD` (secret) | | | |
 | `LIVETIMER_ENABLED`, `LIVETIMER_DURATION` | | | |
-| `INSTANCE_COUNT` | | 2 | Worker only: instances to spread requests over (max 4) |
 
 The agent's variables are documented in
 `deploy/gsm-agent/gsm-agent.env.example`. Secrets there: `GSM_AGENT_SECRET`,
@@ -171,14 +169,15 @@ can land on any instance.
 ## 7. Build and deploy
 
 ```sh
-cd cloudflare
-pnpm install --frozen-lockfile
-pnpm exec tsc --noEmit
+cd <repo-root>
+pnpm install
+pnpm run types
+pnpm run check
 pnpm exec wrangler login
-# once per secret listed above:
+# Set each required secret from the repository root:
 pnpm exec wrangler secret put DB_PASS
-pnpm exec wrangler deploy --dry-run   # builds the image locally, uploads nothing
-pnpm exec wrangler deploy             # builds, pushes the image, deploys the Worker
+# Deploy only through the repository script after configuration is verified:
+pnpm run deploy
 ```
 
 Then check:
@@ -204,9 +203,7 @@ which reports the agent's `/v1/health` in remote mode.
 
 ## 9. Security notes
 
-* The gameserver API key is accepted only from headers. The Unikey is still
-  accepted from `?ukey=` for the shipped client and gameserver; move them to
-  bearer tokens or headers, then remove the query form.
+* The gameserver API key is accepted only from the server-to-server header. New native clients exchange a one-time code for a client-scoped bearer token. Legacy Unikey query support remains only for older clients and should be retired after they are migrated.
 * The Studio poll endpoint returns the authorization code to whoever knows
   the client-chosen `state`. Binding the flow to a PKCE verifier needs a
   matching Studio change.
