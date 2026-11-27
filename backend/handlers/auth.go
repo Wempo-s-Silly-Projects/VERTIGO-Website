@@ -269,9 +269,18 @@ func Logout(c fiber.Ctx) error {
 
 func ValidateUkey(c fiber.Ctx) error {
 	apiKey := c.Get("X-Gameserver-Key")
-	ukey := legacyUnikey(c)
+	if err := service.Auth.ValidateGameserverKey(apiKey); err != nil {
+		log.Printf("GAMESERVER_AUTH: Key mismatch. Unauthorized request.")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized gameserver request"})
+	}
 
-	user, err := service.Auth.ValidateUkey(apiKey, ukey)
+	var user *models.User
+	var err error
+	if hasAccessToken(c) {
+		user, _, err = bearerUser(c)
+	} else {
+		user, err = service.Auth.ValidateUkey(apiKey, legacyUnikey(c))
+	}
 	if err != nil {
 		if err.Error() == "unauthorized" {
 			log.Printf("GAMESERVER_AUTH: Key mismatch. Unauthorized request.")
