@@ -72,12 +72,10 @@ type VertexiaRuntimeEnv = Env & {
 };
 
 export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
-  private readonly env: VertexiaRuntimeEnv;
   private starting: Promise<void> | undefined;
 
   constructor(ctx: DurableObjectState, env: VertexiaRuntimeEnv) {
     super(ctx, env);
-    this.env = env;
     if (ctx.container?.running) {
       void ctx.blockConcurrencyWhile(() =>
         ctx.container!.setInactivityTimeout(INACTIVITY_TIMEOUT_MS),
