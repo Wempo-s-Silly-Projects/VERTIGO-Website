@@ -262,7 +262,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
 
     for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt++) {
       try {
-        const response = await port.fetch("http://vertexia-container/healthz", {
+        const response = await port.fetch("http://vertexia-container/readyz", {
           signal: AbortSignal.timeout(1500),
         });
         await response.body?.cancel();
@@ -274,7 +274,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       await new Promise((resolve) => setTimeout(resolve, STARTUP_RETRY_MS));
     }
 
-    throw new Error("VERTEXIA did not become healthy on port 8080", {
+    throw new Error("VERTEXIA did not become ready on port 8080", {
       cause: lastError,
     });
   }
