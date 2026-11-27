@@ -22,6 +22,14 @@ type VertexiaRuntimeEnv = Env & {
   R2_BUCKET_NAME?: string;
   TYPESAFE_API_KEY?: string;
   GAMESERVER_API_KEY?: string;
+  GSM_AGENT_URL?: string;
+  GSM_AGENT_TOKEN?: string;
+  GSM_PUBLIC_HOST?: string;
+  GSM_PORT_MIN?: string;
+  GSM_PORT_MAX?: string;
+  REDIS_ADDR?: string;
+  REDIS_PASSWORD?: string;
+  REDIS_DB?: string;
 };
 
 export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
@@ -101,6 +109,13 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       throw new Error("R2_ACCOUNT_ID and R2_BUCKET_NAME must be configured");
     }
 
+    const gsmConfigured = Boolean(
+      this.env.GSM_AGENT_URL &&
+      this.env.GSM_AGENT_TOKEN &&
+      this.env.GSM_PUBLIC_HOST &&
+      this.env.REDIS_ADDR,
+    );
+
     if (!container.running) {
       container.start({
         image: container.images.base,
@@ -119,7 +134,15 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           DB_MAX_OPEN_CONNS: "20",
           DB_MAX_IDLE_CONNS: "5",
           DB_CONN_MAX_LIFETIME: "5m",
-          GSM_ENABLED: "false",
+          GSM_ENABLED: gsmConfigured ? "true" : "false",
+          GSM_AGENT_URL: this.env.GSM_AGENT_URL || "",
+          GSM_AGENT_TOKEN: this.env.GSM_AGENT_TOKEN || "",
+          GSM_PUBLIC_HOST: this.env.GSM_PUBLIC_HOST || "",
+          GSM_PORT_MIN: this.env.GSM_PORT_MIN || "5100",
+          GSM_PORT_MAX: this.env.GSM_PORT_MAX || "5250",
+          REDIS_ADDR: this.env.REDIS_ADDR || "",
+          REDIS_PASSWORD: this.env.REDIS_PASSWORD || "",
+          REDIS_DB: this.env.REDIS_DB || "0",
           SESSION_SECURE: "true",
           SESSION_SAMESITE: "Lax",
           SESSION_IDLE_TIMEOUT: "30m",
