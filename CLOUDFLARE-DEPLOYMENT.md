@@ -58,9 +58,15 @@ Before routing users to this deployment, copy existing files from the current VE
 
 The MySQL asset rows store relative file paths, so preserving the keys is required. Do not point production traffic at an empty bucket if existing assets are expected to remain available.
 
-## Game servers
+## Game servers and the RaveEngine client
 
-`GSM_ENABLED=false` is intentional. The existing Go process launcher defaults to a Windows executable path and launches native game-server processes with per-server network ports. Those ports are not made publicly reachable merely by putting the web application behind a Worker. Keep game-server processes on a separate Linux host with the appropriate public networking, then implement and verify a dedicated manager/API integration before enabling game-server creation in production.
+`GSM_ENABLED=false` is intentional. The existing Go process launcher defaults to a Windows executable path and launches native game-server processes with per-server network ports. Those ports are not made publicly reachable merely by putting the web application behind a Worker. Cloudflare Containers receive end-user requests through the Worker and do not expose arbitrary inbound UDP to a Container. RaveEngine uses Lightyear over UDP for real-time gameplay, so the game-server process must run on a separate UDP-capable host.
+
+The RaveEngine client is maintained separately in [Wempo-s-Silly-Projects/RaveEngine-Game](https://github.com/Wempo-s-Silly-Projects/RaveEngine-Game). Its HTTP API default is `https://vertexia.wempos-forum.com`; its join URI must receive the actual game-server host and UDP port, not the Worker hostname. Configure a separate DNS-only game hostname (for example, `games.vertexia.wempos-forum.com`) to resolve directly to the dedicated game-server host. Open the configured UDP port range on that host and set `GSM_PUBLIC_HOST` to that hostname.
+
+Cloudflare Spectrum can proxy custom UDP applications, but current Cloudflare plan documentation lists arbitrary custom UDP as an Enterprise add-on. A regular Workers Paid subscription does not make the Worker or Container an inbound UDP game-server endpoint. See [Cloudflare Spectrum protocols per plan](https://developers.cloudflare.com/spectrum/protocols-per-plan/) and [Container networking limitations](https://developers.cloudflare.com/containers/platform-details/architecture/).
+
+Keep game-server processes on a separate Linux host with the appropriate public networking, then implement and verify a dedicated manager/API integration before enabling game-server creation in production.
 
 ## Deploy
 
