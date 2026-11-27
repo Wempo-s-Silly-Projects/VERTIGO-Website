@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,13 @@ func newRedisStore(addr, password string, db int) (*redisStore, error) {
 		return nil, err
 	}
 	return &redisStore{client: client}, nil
+}
+
+func NewRedisStore(addr, password string, db int) (Store, error) {
+	if strings.TrimSpace(addr) == "" {
+		return nil, fmt.Errorf("REDIS_ADDR is required for a persistent game-server manager")
+	}
+	return newRedisStore(addr, password, db)
 }
 
 func NewStore(addr, password string, db int) Store {
