@@ -361,21 +361,22 @@ func (s *AuthService) RevokeAllRememberTokens(userID int) error {
 	return s.userRepo.DeleteRememberTokensForUser(userID)
 }
 
-func (s *AuthService) ValidateUkey(apiKey, ukey string) (*models.User, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	apiKey = strings.Trim(apiKey, "\"")
-
-	expectedKey := strings.TrimSpace(config.Global.GameserverAPIKey)
-	expectedKey = strings.Trim(expectedKey, "\"")
-
-	if apiKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(expectedKey)) != 1 {
-		return nil, errors.New("unauthorized")
+func (s *AuthService) ValidateGameserverKey(apiKey string) error {
+	apiKey = strings.TrimSpace(strings.Trim(apiKey, "\""))
+	expectedKey := strings.TrimSpace(strings.Trim(config.Global.GameserverAPIKey, "\""))
+	if apiKey == "" || expectedKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(expectedKey)) != 1 {
+		return errors.New("unauthorized")
 	}
+	return nil
+}
 
+func (s *AuthService) ValidateUkey(apiKey, ukey string) (*models.User, error) {
+	if err := s.ValidateGameserverKey(apiKey); err != nil {
+		return nil, err
+	}
 	if ukey == "" {
 		return nil, errors.New("missing ukey")
 	}
-
 	user, err := s.userRepo.GetByUnikey(ukey)
 	if err != nil {
 		return nil, err
@@ -383,6 +384,5 @@ func (s *AuthService) ValidateUkey(apiKey, ukey string) (*models.User, error) {
 	if user == nil {
 		return nil, errors.New("not found")
 	}
-
 	return user, nil
 }
