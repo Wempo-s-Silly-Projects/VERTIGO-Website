@@ -139,7 +139,7 @@ func ProcessRunning(pid int) bool {
 // LogPath returns the log file of a valid server id. Invalid identifiers
 // never become filesystem paths.
 func (l *ProcessLauncher) LogPath(id string) string {
-	if !ValidID(id) {
+	if !ValidID(id) || !filepath.IsLocal(id) || filepath.Base(id) != id {
 		return ""
 	}
 	return filepath.Join(l.opts.LogsDir, "gs-"+id+".log")
@@ -201,7 +201,7 @@ func logTail(path string) string {
 // logReadyFrom checks the log belonging to a validated server identifier.
 // It never accepts a caller-supplied filesystem path.
 func (l *ProcessLauncher) logReadyFrom(id string, offset int64) bool {
-	if !ValidID(id) || filepath.Base(id) != id {
+	if !ValidID(id) || !filepath.IsLocal(id) || filepath.Base(id) != id {
 		return false
 	}
 	path := filepath.Join(l.opts.LogsDir, "gs-"+filepath.Base(id)+".log")
