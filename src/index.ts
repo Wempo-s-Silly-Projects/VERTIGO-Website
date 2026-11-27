@@ -93,14 +93,13 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       const url = new URL(request.url);
       url.protocol = "http:";
       url.host = "vertexia-container";
-      const headers = new Headers(request.headers);
-      for (const name of [...headers.keys()]) {
-        if (name.startsWith("x-forwarded-")) headers.delete(name);
+      const forwarded = new Request(url, request);
+      for (const name of [...forwarded.headers.keys()]) {
+        if (name.startsWith("x-forwarded-")) forwarded.headers.delete(name);
       }
-      headers.delete("forwarded");
-      headers.delete("x-real-ip");
-      headers.delete("host");
-      const forwarded = new Request(url, { ...request, headers });
+      forwarded.headers.delete("forwarded");
+      forwarded.headers.delete("x-real-ip");
+      forwarded.headers.delete("host");
 
       const connectingIP = request.headers.get("CF-Connecting-IP");
       if (connectingIP) {
