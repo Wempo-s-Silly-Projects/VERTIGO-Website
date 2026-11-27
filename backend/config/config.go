@@ -58,6 +58,8 @@ type Config struct {
 	GSMReapInterval        time.Duration
 	GSMShutdownGrace       time.Duration
 	GSMServerLogsDir       string
+	GSMAgentURL            string
+	GSMAgentToken          string
 	FilterEnabled          bool
 	TypeSafeAPIKey         string
 	TypeSafeBaseURL        string
@@ -346,6 +348,8 @@ func Load() (*Config, error) {
 		GSMReapInterval:        gsmReapInterval,
 		GSMShutdownGrace:       gsmShutdownGrace,
 		GSMServerLogsDir:       gsmLogsDir,
+		GSMAgentURL:            strings.TrimSpace(os.Getenv("GSM_AGENT_URL")),
+		GSMAgentToken:          strings.TrimSpace(os.Getenv("GSM_AGENT_TOKEN")),
 		FilterEnabled:          filterEnabled,
 		TypeSafeAPIKey:         strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY")),
 		TypeSafeBaseURL:        typeSafeBaseURL,
