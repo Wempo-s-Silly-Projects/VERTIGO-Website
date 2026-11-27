@@ -121,7 +121,7 @@ func (a *Agent) persist(r record) {
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()
 	if err := a.store.Save(ctx, r); err != nil {
-		a.log.Error("persist server record failed", "server_id", r.ID, "error", err.Error())
+		a.log.Error("persist server record failed", "error_type", fmt.Sprintf("%T", err))
 	}
 }
 
@@ -129,7 +129,7 @@ func (a *Agent) unpersist(id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()
 	if err := a.store.Delete(ctx, id); err != nil {
-		a.log.Error("delete server record failed", "server_id", id, "error", err.Error())
+		a.log.Error("delete server record failed", "error_type", fmt.Sprintf("%T", err))
 	}
 }
 
@@ -207,7 +207,7 @@ func (a *Agent) Create(req gsmagent.CreateServerRequest) (gsmagent.Server, error
 	a.persist(st.rec)
 	a.mu.Unlock()
 
-	log := a.log.With("server_id", req.ServerID, "game_id", req.GameID, "port", port)
+	log := a.log.With("game_id", req.GameID, "port", port)
 	log.Info("launching gameserver")
 	pid, err := a.launcher.LaunchMap(req.ServerID, req.GameID, port, mapPath)
 	if err != nil {
@@ -391,7 +391,7 @@ func (a *Agent) supervise(st *serverState, pid int) {
 	defer a.wg.Done()
 	defer close(st.done)
 	id := st.rec.ID
-	log := a.log.With("server_id", id, "port", st.rec.Port)
+	log := a.log.With("port", st.rec.Port)
 	for {
 		exited := a.exitSignal(pid, id)
 		select {
