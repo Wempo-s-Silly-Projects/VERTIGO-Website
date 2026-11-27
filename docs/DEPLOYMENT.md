@@ -205,3 +205,12 @@ which reports the agent's `/v1/health` in remote mode.
   matching Studio change.
 * Pending banners, clan icons and shop items still live under public
   prefixes, as before.
+## Container privilege model
+
+Cloudflare's Durable Object scheduling policy does not make the Dockerfile's
+non-root `USER` directive a security boundary: Cloudflare documents that
+processes in deployed Containers using this policy retain root-equivalent
+Linux capabilities. The configured UID remains useful for file ownership and
+runtime consistency, but treat application code and dependencies as privileged.
+Keep the image minimal, scope secrets to the application, and do not expose
+arbitrary process execution to untrusted callers.
