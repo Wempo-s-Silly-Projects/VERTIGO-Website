@@ -186,6 +186,9 @@ func studioExchangeHandler(defaultKind string) fiber.Handler {
 			body.Code = c.Query("code")
 		}
 		code := strings.TrimSpace(body.Code)
+		if requested := strings.TrimSpace(body.Client); requested != "" && !strings.EqualFold(requested, defaultKind) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid token kind for exchange endpoint"})
+		}
 		if code == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Missing code"})
 		}
@@ -196,11 +199,9 @@ func studioExchangeHandler(defaultKind string) fiber.Handler {
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid or expired code"})
 		}
-		kind := defaultKind
-		if strings.TrimSpace(body.Client) != "" {
-			kind = service.NormalizeTokenKind(body.Client)
-		}
-		raw, tok, err := service.Tokens.Issue(user.ID, kind)
+		// The endpoint determines the token scope. Never let an untrusted
+		// request upgrade a client exchange into a Studio credential.
+		raw, tok, err := service.Tokens.Issue(user.ID, defaultKind)
 		if err != nil {
 			recordInternalError(c, err)
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "unavailable"})
