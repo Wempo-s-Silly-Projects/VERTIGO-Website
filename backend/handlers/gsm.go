@@ -109,15 +109,11 @@ func clientLaunchURI(gameID int, ticket joinTicket, code string) string {
 	return "vertexia-client://play?" + q.Encode()
 }
 
-func launchCode(user *models.User) string {
-	if service.StudioAuth == nil || user == nil {
-		return ""
+func launchCode(user *models.User) (string, error) {
+	if service.StudioAuth == nil || user == nil || user.ID <= 0 {
+		return "", errors.New("client authorization service unavailable")
 	}
-	code, err := service.StudioAuth.GenerateCode(user.ID)
-	if err != nil {
-		return ""
-	}
-	return code
+	return service.StudioAuth.GenerateCode(user.ID)
 }
 
 // GameJoinPost implements POST /api/v1/games/:id/join. The native client
@@ -147,10 +143,16 @@ func GameJoinPost(c fiber.Ctx) error {
 	if !hasAccessToken(c) {
 		// Website callers additionally get the launch deep link and the
 		// legacy fields the game page script reads.
+		code, err := launchCode(user)
+		if err != nil {
+			_, _ = service.GSM.Leave(server.ID, user.Username)
+			recordInternalError(c, err)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "unavailable"})
+		}
 		body["success"] = true
 		body["redirected"] = redirected
 		body["server"] = toGSView(server)
-		body["client_uri"] = clientLaunchURI(gameID, ticket, launchCode(user))
+		body["client_uri"] = clientLaunchURI(gameID, ticket, code)
 	}
 	return c.JSON(body)
 }
@@ -179,7 +181,7 @@ func GameJoinProgressPost(c fiber.Ctx) error {
 			}
 		}
 		send(fiber.Map{"stage": "looking"})
-		_, _, ticket, err := joinGameForUser(user, gameID, func(stage string) { send(fiber.Map{"stage": stage}) })
+		server, _, ticket, err := joinGameForUser(user, gameID, func(stage string) { send(fiber.Map{"stage": stage}) })
 		if err != nil {
 			msg := "Could not join game. Please try again."
 			switch status, _ := joinFailure(err); status {
@@ -194,7 +196,14 @@ func GameJoinProgressPost(c fiber.Ctx) error {
 			send(fiber.Map{"error": msg})
 			return
 		}
-		send(fiber.Map{"stage": "joining", "client_uri": clientLaunchURI(gameID, ticket, launchCode(user))})
+		code, err := launchCode(user)
+		if err != nil {
+			_, _ = service.GSM.Leave(server.ID, user.Username)
+			log.Printf("GSM join game %d by %s could not issue launch authorization: %v", gameID, user.Username, err)
+			send(fiber.Map{"error": "Could not authorize the game launch. Please try again."})
+			return
+		}
+		send(fiber.Map{"stage": "joining", "client_uri": clientLaunchURI(gameID, ticket, code)})
 	})
 }
 
