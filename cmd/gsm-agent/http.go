@@ -54,7 +54,7 @@ func (a *Agent) accessLog(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		a.log.Info("request", "method", r.Method, "status", rec.status, "remote", r.RemoteAddr, "duration_ms", time.Since(start).Milliseconds())
+		a.log.Info("request", "status", rec.status, "duration_ms", time.Since(start).Milliseconds())
 	})
 }
 
