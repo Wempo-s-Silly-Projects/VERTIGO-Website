@@ -1,76 +1,95 @@
-# VERTEXIA on Cloudflare Workers
+# VERTEXIA on Cloudflare Workers and Containers
 
 Copyright (C) 2026 ItsWempo. SPDX-License-Identifier: AGPL-3.0-or-later.
 
-This deployment keeps the VERTEXIA application separate from Wempo's Forum. The public hostname is `https://vertexia.wempos-forum.com`; the Worker is named `vertexia`.
+This deployment keeps VERTEXIA separate from Wempo's Forum. The public API and website origin is `https://vertexia.wempos-forum.com`.
 
 ## Architecture
 
-- A Cloudflare Worker owns the public hostname and forwards HTTP and WebSocket requests.
-- A singleton Cloudflare Container runs the existing Go 1.25 / Fiber application. It is deliberately a singleton because the current application keeps its live-feed WebSocket hub and Fiber sessions in process memory.
-- The existing MySQL database remains the source of truth and is reached from the container over the network.
-- R2 is mounted into the container for uploaded assets and generated render files.
-- Game-server process management is not enabled inside the web container. The current launcher starts native game-server processes and expects publicly reachable game ports; that service needs a separate Linux game-server host and network design.
+- The root Cloudflare Worker (`src/index.ts`) owns the custom domain and forwards HTTP and WebSocket requests to the application Container.
+- The Worker uses the current Durable Object Container API directly. It does not use the deprecated `@cloudflare/containers` SDK or a second Worker under a `cloudflare/` directory.
+- The Container runs the existing Go 1.25 / Fiber application from the root `Dockerfile`, listening on port 8080.
+- MySQL remains the relational source of truth and is reached from the Container over TLS.
+- Redis stores shared sessions, rate limits, access tokens, browser authorization codes, gameserver state, and feed coordination.
+- R2 is accessed through its S3-compatible API. It is not mounted with FUSE and is not treated as a POSIX filesystem.
+- Native game-server processes run on a separate UDP-capable Linux host through the remote GSM agent. The Worker and web Container are not the public UDP game-server endpoint.
 
-## Required Cloudflare resources
+## Cloudflare configuration
 
-Cloudflare Containers are available only on the **Workers Paid** plan. The connected Cloudflare account currently lacks Container access, so deployment is blocked until that plan is enabled. The Workers Paid subscription is separate from the website's Free Website zone plan.
+The root `wrangler.jsonc` defines:
 
-1. An R2 bucket named `vertexia-assets` (or change `R2_BUCKET_NAME` in `wrangler.jsonc`).
+- Worker name: `vertexia`
+- Custom domain: `vertexia.wempos-forum.com`
+- Container Durable Object class: `VertexiaContainer`
+- Container image: root `Dockerfile`
+- Durable Object storage: SQLite
+
+The Container listens on port 8080. The Worker waits for `/readyz` before proxying requests, so MySQL and Redis must be reachable before the application is considered ready.
+
+## Required resources
+
+1. A Cloudflare R2 bucket named `vertexia-assets` (or update `R2_BUCKET_NAME` in `wrangler.jsonc`).
 2. An R2 API token scoped to that bucket with Object Read and Write permissions.
-3. A MySQL database reachable from Cloudflare Containers. The Worker enables MySQL TLS with certificate verification. The database must allow connections from Cloudflare's container egress and present a certificate valid for its hostname.
-4. Cloudflare Containers enabled for the account.
+3. A MySQL database reachable from Cloudflare Containers over TLS. Its certificate must validate for the configured database hostname, or a suitable CA must be supplied.
+4. A Redis service reachable from the Container. Production requires shared Redis for sessions, authorization tokens, and other cross-request state.
+5. Cloudflare Containers enabled for the Worker account and plan.
 
-The R2 mount uses the pinned `tigrisfs` release in the Dockerfile. FUSE access is not a full POSIX filesystem and is not equivalent to local SSD storage. Exercise upload, immediate read-after-write, mesh preview, delete, and restart behavior before accepting production traffic.
+## Worker secrets and variables
 
-## Worker secrets
+Set secrets through Wrangler from the repository root. Never commit secret values.
 
-Set these with Wrangler. Never commit secret values:
+Required secrets:
 
-```sh
-pnpm install
-pnpm run types
+- `DB_HOST`
+- `DB_USER`
+- `DB_PASS`
+- `DB_NAME`
+- `ALTCHA_HMAC_KEY`
+- `R2_ACCESS_KEY_ID` (or `AWS_ACCESS_KEY_ID`)
+- `R2_SECRET_ACCESS_KEY` (or `AWS_SECRET_ACCESS_KEY`)
+- `REDIS_URL` or `REDIS_ADDR` plus `REDIS_PASSWORD` where applicable
 
-pnpm exec wrangler secret put DB_HOST
-pnpm exec wrangler secret put DB_USER
-pnpm exec wrangler secret put DB_PASS
-pnpm exec wrangler secret put DB_NAME
-pnpm exec wrangler secret put ALTCHA_HMAC_KEY
-pnpm exec wrangler secret put AWS_ACCESS_KEY_ID
-pnpm exec wrangler secret put AWS_SECRET_ACCESS_KEY
+The non-secret R2 account ID and bucket name are declared in `wrangler.jsonc`.
 
-# Optional integrations
-pnpm exec wrangler secret put REGISTRATION_IP_SALT
-pnpm exec wrangler secret put GAMESERVER_API_KEY
-pnpm exec wrangler secret put TYPESAFE_API_KEY
-```
+Optional secrets and variables include:
 
-Set `DB_PORT` in `wrangler.jsonc` or as a Worker variable if the database does not use port 3306. The R2 account ID and bucket name are non-secret variables already declared in the Wrangler config.
+- `REGISTRATION_IP_SALT`
+- `GAMESERVER_API_KEY`
+- `GSM_AGENT_URL`
+- `GSM_AGENT_SECRET`
+- `GSM_PUBLIC_HOST`
+- `GSM_PUBLIC_IP`
+- `NETCODE_PRIVATE_KEY`
+- `NETCODE_PROTOCOL_ID`
+- `TYPESAFE_API_KEY`
+- `DB_TLS_CA_PEM`
+- `DB_TLS_SERVER_NAME`
 
-The database must be reachable from the container. A private database that only accepts connections from a private network needs a supported Cloudflare network path before this deployment can work.
+The Worker enables remote GSM only when the agent URL, agent secret, public game host, Redis, Netcode configuration, and gameserver API key are all present. Otherwise GSM stays disabled.
 
 ## Asset migration
 
-Before routing users to this deployment, copy existing files from the current VERTEXIA host into the matching R2 keys:
+Before routing users to this deployment, copy existing files into R2 while preserving their relative keys. In particular:
 
-- `uploads/assets/**` stays under `uploads/assets/**`.
-- `static/renders/meshes/**` stays under `renders/meshes/**`.
+- `uploads/assets/**` remains under `uploads/assets/**`.
+- `static/renders/meshes/**` remains under `renders/meshes/**`.
+- Preserve any other keys referenced by MySQL asset records.
 
-The MySQL asset rows store relative file paths, so preserving the keys is required. Do not point production traffic at an empty bucket if existing assets are expected to remain available.
+The application uses direct R2 object operations. Do not configure a FUSE mount or assume full local-filesystem semantics.
 
-## Game servers and the RaveEngine client
+## Game servers and the native client
 
-`GSM_ENABLED=false` is intentional. The existing Go process launcher defaults to a Windows executable path and launches native game-server processes with per-server network ports. Those ports are not made publicly reachable merely by putting the web application behind a Worker. Cloudflare Containers receive end-user requests through the Worker and do not expose arbitrary inbound UDP to a Container. RaveEngine uses Lightyear over UDP for real-time gameplay, so the game-server process must run on a separate UDP-capable host.
+Cloudflare Worker and Container ingress is HTTP/WebSocket. It does not expose arbitrary inbound UDP for Lightyear gameplay.
 
-The RaveEngine client is maintained separately in [Wempo-s-Silly-Projects/RaveEngine-Game](https://github.com/Wempo-s-Silly-Projects/RaveEngine-Game). Its HTTP API default is `https://vertexia.wempos-forum.com`; its join URI must receive the actual game-server host and UDP port, not the Worker hostname. Configure a separate DNS-only game hostname (for example, `games.vertexia.wempos-forum.com`) to resolve directly to the dedicated game-server host. Open the configured UDP port range on that host and set `GSM_PUBLIC_HOST` to that hostname.
+Keep the native game-server process on a separate Linux host with a public UDP port range. Configure a DNS-only game hostname such as `games.vertexia.wempos-forum.com` to point to that host, then configure the remote GSM agent and `GSM_PUBLIC_HOST`.
 
-Cloudflare Spectrum can proxy custom UDP applications, but current Cloudflare plan documentation lists arbitrary custom UDP as an Enterprise add-on. A regular Workers Paid subscription does not make the Worker or Container an inbound UDP game-server endpoint. See [Cloudflare Spectrum protocols per plan](https://developers.cloudflare.com/spectrum/protocols-per-plan/) and [Container networking limitations](https://developers.cloudflare.com/containers/platform-details/architecture/).
+The native client uses a short-lived Netcode connect token and a one-time browser authorization code. It exchanges that code at `/api/v1/auth/exchange` for a client-scoped bearer token. The long-lived gameserver API key and Netcode private key must never be embedded in the distributed client.
 
-Keep game-server processes on a separate Linux host with the appropriate public networking, then implement and verify a dedicated manager/API integration before enabling game-server creation in production.
+The client repository is maintained separately: [Wempo-s-Silly-Projects/RaveEngine-Game](https://github.com/Wempo-s-Silly-Projects/RaveEngine-Game).
 
 ## Deploy
 
-A Docker-compatible engine must be running locally because Wrangler builds and uploads the Container image during deployment.
+Run these commands from the repository root:
 
 ```sh
 pnpm install
@@ -79,17 +98,21 @@ pnpm run check
 pnpm run deploy
 ```
 
-The first Container deployment can take several minutes to provision. After deployment, verify the Container is healthy, then test:
+No production deployment is implied by this document. Configure the database, Redis, R2, and required secrets before deploying.
 
-- Login, registration, logout, and session continuity.
-- MySQL-backed profile, forum, shop, clan, game, and avatar operations.
-- `/ws/feed` WebSocket upgrades and live updates.
-- Asset upload, read, moderation, deletion, and generated mesh previews.
-- Container restart and R2 persistence.
+## Post-deployment verification
 
-## Operational limitations to close before full production
+- `GET /healthz` reports that the Go process is serving HTTP.
+- `GET /readyz` confirms MySQL and Redis are reachable.
+- Verify login, registration, logout, and session continuity.
+- Verify MySQL-backed profile, game, avatar, and other platform operations.
+- Verify `/ws/feed` WebSocket upgrades and cross-request feed updates.
+- Verify R2 upload, immediate read-after-write, deletion, and persistence across Container restarts.
+- Verify the native client receives a one-time code and connect token, exchanges the code, and joins a gameserver through the separate UDP hostname.
 
-- Fiber's default session store is in-memory. A container restart invalidates active sessions; use a shared durable session store before relying on long-lived sessions.
-- The live feed WebSocket hub is process-local. Keep one application container until the hub is moved to shared coordination.
-- The game-server manager requires a separate host and public game-port networking.
-- R2 FUSE has different performance and filesystem semantics from a local disk. Validate the actual asset workload and migrate to direct R2 API storage if the application needs stronger filesystem guarantees.
+## Operational limits
+
+- The Worker currently routes to a named Container Durable Object. Plan capacity and availability around that deployment shape.
+- R2 object storage is not a local filesystem. Application paths must use the storage abstraction and object semantics.
+- Game-server UDP traffic remains outside the Worker and web Container.
+- Do not enable production GSM until the remote agent, Redis coordination, server binary, UDP firewall, and client join flow have all been verified.
