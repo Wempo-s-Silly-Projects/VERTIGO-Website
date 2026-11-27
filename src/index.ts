@@ -3,7 +3,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 
-const APP_PORT = 3000;
+const APP_PORT = 8080;
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const STARTUP_ATTEMPTS = 90;
 const STARTUP_RETRY_MS = 500;
@@ -14,16 +14,32 @@ type VertexiaRuntimeEnv = Env & {
   DB_USER?: string;
   DB_PASS?: string;
   DB_NAME?: string;
+  DB_TLS_CA_PEM?: string;
+  DB_TLS_SERVER_NAME?: string;
+  DB_TIMEOUT?: string;
   ALTCHA_HMAC_KEY?: string;
   REGISTRATION_IP_SALT?: string;
   AWS_ACCESS_KEY_ID?: string;
   AWS_SECRET_ACCESS_KEY?: string;
   R2_ACCOUNT_ID?: string;
   R2_BUCKET_NAME?: string;
+  R2_BUCKET?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  UPLOAD_MAX_BYTES?: string;
+  STORAGE_DIR?: string;
   TYPESAFE_API_KEY?: string;
   GAMESERVER_API_KEY?: string;
   GSM_AGENT_URL?: string;
-  GSM_AGENT_TOKEN?: string;
+  GSM_AGENT_SECRET?: string;
+  GSM_AGENT_TIMEOUT?: string;
+  GSM_MAX_PLAYERS_DEFAULT?: string;
+  GSM_MIN_PLAYERS_DEFAULT?: string;
+  GSM_IDLE_TIMEOUT?: string;
+  GSM_REAP_INTERVAL?: string;
+  GSM_HEARTBEAT_TIMEOUT?: string;
+  GSM_MAX_SERVERS?: string;
+  GSM_READY_TIMEOUT?: string;
   GSM_PUBLIC_HOST?: string;
   GSM_PORT_MIN?: string;
   GSM_PORT_MAX?: string;
@@ -32,11 +48,21 @@ type VertexiaRuntimeEnv = Env & {
   REDIS_TLS?: string;
   NETCODE_PRIVATE_KEY?: string;
   NETCODE_PROTOCOL_ID?: string;
+  NETCODE_TOKEN_TTL?: string;
+  CLIENT_TOKEN_TTL?: string;
+  STUDIO_TOKEN_TTL?: string;
   GSM_PUBLIC_IP?: string;
   R2_ENDPOINT?: string;
   R2_PUBLIC_BASE_URL?: string;
   REDIS_PASSWORD?: string;
   REDIS_DB?: string;
+  TRUSTED_PROXIES?: string;
+  TYPESAFE_BASE_URL?: string;
+  TYPESAFE_MODEL?: string;
+  FILTER_TIMEOUT?: string;
+  SITELOCK_ENABLED?: string;
+  LIVETIMER_ENABLED?: string;
+  LIVETIMER_DURATION?: string;
 };
 
 export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
@@ -112,7 +138,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
     if (missing.length > 0) {
       throw new Error(`Missing required Worker secrets: ${missing.join(", ")}`);
     }
-    if (!this.env.R2_ACCOUNT_ID || !this.env.R2_BUCKET_NAME) {
+    if (!this.env.R2_ACCOUNT_ID || !(this.env.R2_BUCKET_NAME || this.env.R2_BUCKET)) {
       throw new Error("R2_ACCOUNT_ID and R2_BUCKET_NAME must be configured");
     }
     if (!this.env.REDIS_URL && !this.env.REDIS_ADDR) {
@@ -121,7 +147,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
 
     const gsmConfigured = Boolean(
       this.env.GSM_AGENT_URL &&
-      this.env.GSM_AGENT_TOKEN &&
+      this.env.GSM_AGENT_SECRET &&
       this.env.GSM_PUBLIC_HOST &&
       (this.env.REDIS_URL || this.env.REDIS_ADDR) &&
       this.env.NETCODE_PRIVATE_KEY &&
@@ -146,15 +172,26 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           DB_PASS: this.env.DB_PASS!,
           DB_NAME: this.env.DB_NAME!,
           DB_TLS: "true",
+          DB_TLS_CA_PEM: this.env.DB_TLS_CA_PEM || "",
+          DB_TLS_SERVER_NAME: this.env.DB_TLS_SERVER_NAME || "",
+          DB_TIMEOUT: this.env.DB_TIMEOUT || "10s",
           DB_MAX_OPEN_CONNS: "20",
           DB_MAX_IDLE_CONNS: "5",
           DB_CONN_MAX_LIFETIME: "5m",
           GSM_ENABLED: gsmConfigured ? "true" : "false",
           GSM_AGENT_URL: this.env.GSM_AGENT_URL || "",
-          GSM_AGENT_TOKEN: this.env.GSM_AGENT_TOKEN || "",
+          GSM_AGENT_SECRET: this.env.GSM_AGENT_SECRET || "",
+          GSM_AGENT_TIMEOUT: this.env.GSM_AGENT_TIMEOUT || "10s",
           GSM_PUBLIC_HOST: this.env.GSM_PUBLIC_HOST || "",
           GSM_PORT_MIN: this.env.GSM_PORT_MIN || "5100",
           GSM_PORT_MAX: this.env.GSM_PORT_MAX || "5250",
+          GSM_MAX_PLAYERS_DEFAULT: this.env.GSM_MAX_PLAYERS_DEFAULT || "100",
+          GSM_MIN_PLAYERS_DEFAULT: this.env.GSM_MIN_PLAYERS_DEFAULT || "2",
+          GSM_IDLE_TIMEOUT: this.env.GSM_IDLE_TIMEOUT || "5m",
+          GSM_REAP_INTERVAL: this.env.GSM_REAP_INTERVAL || "15s",
+          GSM_HEARTBEAT_TIMEOUT: this.env.GSM_HEARTBEAT_TIMEOUT || "90s",
+          GSM_MAX_SERVERS: this.env.GSM_MAX_SERVERS || "",
+          GSM_READY_TIMEOUT: this.env.GSM_READY_TIMEOUT || "30s",
           REDIS_REQUIRED: "true",
           REDIS_URL: this.env.REDIS_URL || "",
           REDIS_ADDR: this.env.REDIS_ADDR || "",
@@ -173,18 +210,28 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
           GAMESERVER_API_KEY: this.env.GAMESERVER_API_KEY || "",
           NETCODE_PRIVATE_KEY: this.env.NETCODE_PRIVATE_KEY || "",
           NETCODE_PROTOCOL_ID: this.env.NETCODE_PROTOCOL_ID || "",
+          NETCODE_TOKEN_TTL: this.env.NETCODE_TOKEN_TTL || "60s",
+          CLIENT_TOKEN_TTL: this.env.CLIENT_TOKEN_TTL || "24h",
+          STUDIO_TOKEN_TTL: this.env.STUDIO_TOKEN_TTL || "168h",
           GSM_PUBLIC_IP: this.env.GSM_PUBLIC_IP || "",
           TYPESAFE_API_KEY: this.env.TYPESAFE_API_KEY || "",
+          TYPESAFE_BASE_URL: this.env.TYPESAFE_BASE_URL || "",
+          TYPESAFE_MODEL: this.env.TYPESAFE_MODEL || "",
+          FILTER_TIMEOUT: this.env.FILTER_TIMEOUT || "20s",
+          TRUSTED_PROXIES: this.env.TRUSTED_PROXIES || "0.0.0.0/0,::/0",
+          SITELOCK_ENABLED: this.env.SITELOCK_ENABLED || "false",
+          LIVETIMER_ENABLED: this.env.LIVETIMER_ENABLED || "false",
+          LIVETIMER_DURATION: this.env.LIVETIMER_DURATION || "",
           FILTER_ENABLED: this.env.TYPESAFE_API_KEY ? "true" : "false",
           R2_ACCOUNT_ID: this.env.R2_ACCOUNT_ID,
-          R2_BUCKET: this.env.R2_BUCKET_NAME,
-          R2_BUCKET_NAME: this.env.R2_BUCKET_NAME,
-          R2_ACCESS_KEY_ID: this.env.AWS_ACCESS_KEY_ID!,
-          R2_SECRET_ACCESS_KEY: this.env.AWS_SECRET_ACCESS_KEY!,
+          R2_BUCKET: this.env.R2_BUCKET || this.env.R2_BUCKET_NAME || "",
+          R2_BUCKET_NAME: this.env.R2_BUCKET_NAME || this.env.R2_BUCKET || "",
+          R2_ACCESS_KEY_ID: this.env.R2_ACCESS_KEY_ID || this.env.AWS_ACCESS_KEY_ID!,
+          R2_SECRET_ACCESS_KEY: this.env.R2_SECRET_ACCESS_KEY || this.env.AWS_SECRET_ACCESS_KEY!,
           R2_PUBLIC_BASE_URL: this.env.R2_PUBLIC_BASE_URL || "",
           R2_ENDPOINT: this.env.R2_ENDPOINT || "",
-          AWS_ACCESS_KEY_ID: this.env.AWS_ACCESS_KEY_ID!,
-          AWS_SECRET_ACCESS_KEY: this.env.AWS_SECRET_ACCESS_KEY!,
+          AWS_ACCESS_KEY_ID: this.env.R2_ACCESS_KEY_ID || this.env.AWS_ACCESS_KEY_ID!,
+          AWS_SECRET_ACCESS_KEY: this.env.R2_SECRET_ACCESS_KEY || this.env.AWS_SECRET_ACCESS_KEY!,
         },
       });
     }
@@ -195,7 +242,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
 
     for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt++) {
       try {
-        const response = await port.fetch("http://vertexia-container/health", {
+        const response = await port.fetch("http://vertexia-container/healthz", {
           signal: AbortSignal.timeout(1500),
         });
         await response.body?.cancel();
@@ -207,7 +254,7 @@ export class VertexiaContainer extends DurableObject<VertexiaRuntimeEnv> {
       await new Promise((resolve) => setTimeout(resolve, STARTUP_RETRY_MS));
     }
 
-    throw new Error("VERTEXIA did not become healthy on port 3000", {
+    throw new Error("VERTEXIA did not become healthy on port 8080", {
       cause: lastError,
     });
   }
