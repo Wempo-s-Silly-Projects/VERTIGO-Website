@@ -2,6 +2,7 @@ package gsm
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -63,14 +64,34 @@ type redisStore struct {
 }
 
 func newRedisStore(addr, password string, db int) (*redisStore, error) {
-	client := redis.NewClient(&redis.Options{
+	options := &redis.Options{
 		Addr:         addr,
 		Password:     password,
 		DB:           db,
 		DialTimeout:  3 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-	})
+	}
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		parsed, err := redis.ParseURL(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid REDIS_ADDR URL: %w", err)
+		}
+		if password != "" {
+			parsed.Password = password
+		}
+		parsed.DialTimeout = options.DialTimeout
+		parsed.ReadTimeout = options.ReadTimeout
+		parsed.WriteTimeout = options.WriteTimeout
+		if db != 0 {
+			parsed.DB = db
+		}
+		options = parsed
+	}
+	if strings.HasPrefix(addr, "rediss://") {
+		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	client := redis.NewClient(options)
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
