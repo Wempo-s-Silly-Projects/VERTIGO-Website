@@ -24,7 +24,6 @@ import (
 	"time"
 )
 
-const readyMarker = "Start trigger dispatched"
 
 var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
@@ -136,9 +135,17 @@ func processMatches(pid int, id string) bool {
 
 func (a *agent) running(record serverRecord) bool { return processMatches(record.PID, record.ID) }
 
-func (a *agent) ready(id string) bool {
-	raw, err := os.ReadFile(a.logPath(id))
-	return err == nil && strings.Contains(string(raw), readyMarker)
+func udpPortBound(port int) bool {
+	probe, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+	if err != nil {
+		return true
+	}
+	_ = probe.Close()
+	return false
+}
+
+func (a *agent) ready(record serverRecord) bool {
+	return a.running(record) && udpPortBound(record.Port)
 }
 
 func (a *agent) launch(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +159,7 @@ func (a *agent) launch(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if existing, ok := a.records[input.Port]; ok && a.running(existing) {
-		if existing.ID == input.ID { writeJSON(w, serverStatus{ID: existing.ID, GameID: existing.GameID, Port: existing.Port, PID: existing.PID, Running: true, Ready: a.ready(existing.ID)}); return }
+		if existing.ID == input.ID { writeJSON(w, serverStatus{ID: existing.ID, GameID: existing.GameID, Port: existing.Port, PID: existing.PID, Running: true, Ready: a.ready(existing)}); return }
 		http.Error(w, "port is already assigned to a running server", http.StatusConflict); return
 	}
 	probe, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(input.Port)))
@@ -199,7 +206,7 @@ func (a *agent) status(w http.ResponseWriter, r *http.Request) {
 		_ = os.Remove(a.recordPath(record.ID))
 		http.NotFound(w, r); return
 	}
-	writeJSON(w, serverStatus{ID: record.ID, GameID: record.GameID, Port: record.Port, PID: record.PID, Running: true, Ready: a.ready(record.ID)})
+	writeJSON(w, serverStatus{ID: record.ID, GameID: record.GameID, Port: record.Port, PID: record.PID, Running: true, Ready: a.ready(record)})
 }
 
 func (a *agent) stop(w http.ResponseWriter, r *http.Request) {

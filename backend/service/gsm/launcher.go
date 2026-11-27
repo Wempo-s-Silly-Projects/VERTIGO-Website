@@ -3,6 +3,7 @@ package gsm
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,6 +214,15 @@ func (l *ProcessLauncher) running(pid int) bool {
 	return processRunning(pid)
 }
 
+func udpPortBound(port int) bool {
+	probe, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+	if err != nil {
+		return true
+	}
+	_ = probe.Close()
+	return false
+}
+
 func (l *ProcessLauncher) WaitHealthy(id string, port int, pid int, timeout time.Duration) error {
 	path := l.logPath(id)
 	deadline := time.Now().Add(timeout)
@@ -220,18 +230,18 @@ func (l *ProcessLauncher) WaitHealthy(id string, port int, pid int, timeout time
 		if !l.running(pid) {
 			return fmt.Errorf("gameserver exited during startup: %s", logTail(path))
 		}
-		if logReady(path) {
+		if udpPortBound(port) {
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if logReady(path) {
+	if udpPortBound(port) {
 		return nil
 	}
 	if !l.running(pid) {
 		return fmt.Errorf("gameserver exited during startup: %s", logTail(path))
 	}
-	return fmt.Errorf("gameserver did not become healthy in time: %s", logTail(path))
+	return fmt.Errorf("gameserver did not bind UDP port %d before timeout: %s", port, logTail(path))
 }
 
 func (l *ProcessLauncher) Alive(pid int, port int) bool {
