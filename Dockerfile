@@ -1,4 +1,4 @@
-# Vertexia web platform image (used by Cloudflare Containers via cloudflare/wrangler.jsonc).
+# Vertexia web platform image (used by Cloudflare Containers via the root wrangler.jsonc).
 # Only the main web binary is built here; ./cmd/gsm-agent runs on the gameserver host.
 
 ARG GO_IMAGE=golang:1.25.14-alpine3.24@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59
