@@ -111,8 +111,26 @@ func initGSMService() *gsm.Manager {
 		ServerMap:         cfg.GSMServerMap,
 		LogsDir:           cfg.GSMServerLogsDir,
 	}
-	store := gsm.NewStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
-	launcher := gsm.NewProcessLauncher(gsmCfg.BindHost, gsmCfg.ServerBin, gsmCfg.ServerWorkdir, gsmCfg.ServerMap, gsmCfg.LogsDir, cfg.GameserverAPIKey)
+	var store gsm.Store
+	var launcher gsm.Launcher
+	if cfg.GSMAgentURL != "" {
+		var err error
+		store, err = gsm.NewRedisStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		if err != nil {
+			log.Printf("GSM disabled: persistent Redis store is unavailable: %v", err)
+			return nil
+		}
+		launcher, err = gsm.NewHTTPLauncher(cfg.GSMAgentURL, cfg.GSMAgentToken)
+		if err != nil {
+			_ = store.Close()
+			log.Printf("GSM disabled: remote game-server agent is not configured: %v", err)
+			return nil
+		}
+		log.Printf("GSM using remote game-server agent at %s", cfg.GSMAgentURL)
+	} else {
+		store = gsm.NewStore(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+		launcher = gsm.NewProcessLauncher(gsmCfg.BindHost, gsmCfg.ServerBin, gsmCfg.ServerWorkdir, gsmCfg.ServerMap, gsmCfg.LogsDir, cfg.GameserverAPIKey)
+	}
 	manager := gsm.NewManager(gsmCfg, store, launcher, func(gameID int) (gsm.GameInfo, error) {
 		if Game == nil {
 			return gsm.GameInfo{}, errors.New("game service unavailable")
