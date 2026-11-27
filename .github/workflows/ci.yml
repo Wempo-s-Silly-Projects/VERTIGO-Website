@@ -28,6 +28,8 @@ jobs:
         run: go vet ./...
       - name: Build
         run: go build ./...
+      - name: Build Container image
+        run: docker build --platform linux/amd64 --tag vertexia-ci .
 
   worker:
     name: Worker typecheck
@@ -46,6 +48,8 @@ jobs:
         run: pnpm types
       - name: Typecheck
         run: pnpm check
+      - name: Build Worker bundle (dry run)
+        run: pnpm exec wrangler deploy --dry-run
       - name: Export generated lockfile for commit
         run: |
           base64 -w0 pnpm-lock.yaml | fold -w 8000 | sed 's/^/LOCKFILE_B64:/'
