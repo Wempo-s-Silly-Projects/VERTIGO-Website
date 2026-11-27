@@ -18,7 +18,7 @@ Cloudflare Containers are available only on the **Workers Paid** plan. The conne
 
 1. An R2 bucket named `vertexia-assets` (or change `R2_BUCKET_NAME` in `wrangler.jsonc`).
 2. An R2 API token scoped to that bucket with Object Read and Write permissions.
-3. A MySQL database reachable from Cloudflare Containers. The database must allow connections from Cloudflare's container egress and use TLS where supported by the database provider.
+3. A MySQL database reachable from Cloudflare Containers. The Worker enables MySQL TLS with certificate verification. The database must allow connections from Cloudflare's container egress and present a certificate valid for its hostname.
 4. Cloudflare Containers enabled for the account.
 
 The R2 mount uses the pinned `tigrisfs` release in the Dockerfile. FUSE access is not a full POSIX filesystem and is not equivalent to local SSD storage. Exercise upload, immediate read-after-write, mesh preview, delete, and restart behavior before accepting production traffic.
